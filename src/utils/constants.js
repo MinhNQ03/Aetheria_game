@@ -111,9 +111,8 @@ export const ENEMY_CONFIG = Object.freeze({
     waypointThreshold: 0.4,
     // How close the enemy stops when chasing (so it doesn't jitter).
     chaseStopDistance: 1.2,
-    // Speeds the AI uses when issuing headings (mirrors stats for convenience).
-    moveSpeed: 2.2,
-    chaseSpeed: 3.6,
+    // NOTE: movement speeds live in `stats` (single source of truth). Enemy
+    // composes stats.moveSpeed/stats.chaseSpeed into the AI config at runtime.
   }),
 });
 

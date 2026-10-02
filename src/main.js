@@ -15,23 +15,23 @@ game.start().catch((err) => {
   console.error('Game failed to start:', err);
 });
 
-// Press "L" to toggle UI language at runtime (vi <-> en).
-// This proves the localization layer updates live; later it moves into a menu.
-// Press "K" (DEV) to damage the nearest enemy — exercises health/death until a
-// real combat system exists in a later step.
+// Press "L" to toggle UI language at runtime (vi <-> en). Production control.
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyL') {
     game.toggleLanguage();
-  } else if (event.code === 'KeyK') {
-    game.devDamageNearestEnemy();
   }
 });
 
-// Expose the game for automated capture / debugging ONLY in dev builds. Vite
-// statically replaces import.meta.env.DEV, so this block is dropped from the
-// production bundle (no debug surface shipped).
+// DEV-ONLY surface. Vite statically replaces import.meta.env.DEV, so this whole
+// block (the "K" debug-damage handler and the window.__game reference) is
+// dropped from the production bundle — no debug behaviour ships.
 if (import.meta.env.DEV) {
   window.__game = game;
+  window.addEventListener('keydown', (event) => {
+    if (event.code === 'KeyK') {
+      game.devDamageNearestEnemy();
+    }
+  });
 }
 
 // Clean up GPU/DOM resources on page unload.

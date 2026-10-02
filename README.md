@@ -100,11 +100,15 @@ chạy được cả trên GitHub Pages (subpath) lẫn itch.io (iframe).
 
 ## Cốt truyện
 
-Xem [docs/STORY.md](docs/STORY.md). STEP 1 chưa triển khai bất kỳ logic cốt
-truyện nào; đây là tài liệu định hướng cho các bước sau.
+Xem [docs/STORY.md](docs/STORY.md). Chưa có logic cốt truyện trong game; đây là
+tài liệu định hướng cho các bước sau.
 
-## Lộ trình (các bước sau)
+## Lộ trình
 
-Chưa làm ở STEP 1: nhân vật GLB, animation, quái + AI, combat/damage/HP, skill,
-boss, NPC, dialogue, quest, inventory, nhiều map + chuyển map, save/load, âm
-thanh, settings menu.
+Đã làm (STEP 1-4): nền tảng engine, player 3D + di chuyển camera-relative,
+camera orbit, world/map data-driven + collision + boundary, quái + AI
+(idle/patrol/chase/dead) + máu/chết.
+
+Chưa làm (các bước tới): combat thật (player tấn công, hitbox, damage), nhân vật
+GLB + animation, skill, boss, NPC, dialogue, quest, inventory, nhiều map +
+chuyển map, save/load, âm thanh, settings menu.

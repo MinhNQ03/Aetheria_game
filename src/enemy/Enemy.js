@@ -35,10 +35,18 @@ export class Enemy {
     this.id = definition.id;
     this.type = definition.type ?? 'basic';
 
-    // Gameplay/movement stats (facade uses these).
+    // Gameplay/movement stats (facade uses these). Single source of truth for
+    // movement speeds.
     this._stats = { ...baseConfig.stats, ...(definition.stats ?? {}) };
-    // AI perception/behaviour tuning (AI controller uses these).
-    this._aiConfig = { ...baseConfig.ai, ...(definition.ai ?? {}) };
+    // AI perception/behaviour tuning. Movement speeds are composed in from
+    // stats so the AI issues headings at the right speed without duplicating
+    // those values in config.
+    this._aiConfig = {
+      ...baseConfig.ai,
+      ...(definition.ai ?? {}),
+      moveSpeed: this._stats.moveSpeed,
+      chaseSpeed: this._stats.chaseSpeed,
+    };
 
     const behavior = definition.behavior ?? {};
 
