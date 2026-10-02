@@ -27,5 +27,12 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+// Expose the game for automated capture / debugging ONLY in dev builds. Vite
+// statically replaces import.meta.env.DEV, so this block is dropped from the
+// production bundle (no debug surface shipped).
+if (import.meta.env.DEV) {
+  window.__game = game;
+}
+
 // Clean up GPU/DOM resources on page unload.
 window.addEventListener('beforeunload', () => game.dispose());

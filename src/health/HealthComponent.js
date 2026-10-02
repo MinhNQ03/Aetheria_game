@@ -2,14 +2,23 @@
  * Health as pure data/logic — no Three.js, no rendering.
  *
  * Shared by any entity that can be damaged (enemies now; player/boss later).
- * Guarantees: current stays within [0, max]; non-positive damage/heal are
- * no-ops; damage after death does nothing; the death callback fires exactly
- * once. Listener registration returns an unsubscribe function so there's no
- * global event bus to leak.
+ * Guarantees:
+ *   - max is a finite number > 0 (validated at construction);
+ *   - current always stays within [0, max];
+ *   - non-positive / non-finite damage and heal are no-ops;
+ *   - damage after death does nothing;
+ *   - the death callback fires exactly once;
+ *   - internal state (current, dead) is fully updated BEFORE any listener runs,
+ *     and a throwing listener cannot corrupt that state (listeners are isolated).
+ *
+ * Listener registration returns an unsubscribe function — no global event bus.
  */
 export class HealthComponent {
-  /** @param {number} max maximum (and starting) health. */
+  /** @param {number} max maximum (and starting) health; must be finite and > 0. */
   constructor(max) {
+    if (!Number.isFinite(max) || max <= 0) {
+      throw new Error(`HealthComponent: max must be a finite number > 0 (got ${max})`);
+    }
     this.max = max;
     this.current = max;
     this._dead = false;
@@ -25,39 +34,61 @@ export class HealthComponent {
     return this._dead;
   }
 
+  /** @returns {number} current health. */
+  getCurrent() {
+    return this.current;
+  }
+
+  /** @returns {number} max health. */
+  getMax() {
+    return this.max;
+  }
+
   /** @returns {number} current / max in [0, 1]. */
   getFraction() {
-    return this.max > 0 ? this.current / this.max : 0;
+    return this.current / this.max;
   }
 
   /**
    * Apply damage. Clamps at 0 and triggers death once.
-   * @param {number} amount positive damage; <= 0 is ignored.
+   *
+   * State is mutated and the dead flag decided before any notification, so a
+   * throwing onDamage listener can't skip death handling or leave current in a
+   * bad state. Listeners are invoked in isolation (one failure is contained).
+   *
+   * @param {number} amount positive, finite damage; otherwise ignored.
    * @returns {number} actual damage applied.
    */
   takeDamage(amount) {
-    if (this._dead || amount <= 0) return 0;
+    if (this._dead || !Number.isFinite(amount) || amount <= 0) return 0;
 
+    // 1-4) Mutate state and decide death before emitting anything.
     const applied = Math.min(amount, this.current);
     this.current -= applied;
-
-    for (const cb of this._onDamage) cb(applied, this);
-
-    if (this.current <= 0) {
+    const justDied = this.current <= 0;
+    if (justDied) {
       this.current = 0;
       this._dead = true;
-      for (const cb of this._onDeath) cb(this);
     }
+
+    // 5) Damage notification.
+    this._emit(this._onDamage, (cb) => cb(applied, this));
+
+    // 6) Death notification (exactly once; state already final).
+    if (justDied) {
+      this._emit(this._onDeath, (cb) => cb(this));
+    }
+
     return applied;
   }
 
   /**
-   * Heal, clamped at max. No effect once dead.
-   * @param {number} amount positive heal; <= 0 is ignored.
+   * Heal, clamped at max. No effect once dead or for non-positive amounts.
+   * @param {number} amount positive, finite heal; otherwise ignored.
    * @returns {number} actual amount healed.
    */
   heal(amount) {
-    if (this._dead || amount <= 0) return 0;
+    if (this._dead || !Number.isFinite(amount) || amount <= 0) return 0;
     const before = this.current;
     this.current = Math.min(this.max, this.current + amount);
     return this.current - before;
@@ -91,5 +122,19 @@ export class HealthComponent {
   clearListeners() {
     this._onDamage.clear();
     this._onDeath.clear();
+  }
+
+  /**
+   * Invoke each listener in isolation so one throwing listener doesn't stop the
+   * others or corrupt health state. Errors are reported, not swallowed silently.
+   */
+  _emit(set, call) {
+    for (const cb of set) {
+      try {
+        call(cb);
+      } catch (err) {
+        console.error('HealthComponent listener threw:', err);
+      }
+    }
   }
 }

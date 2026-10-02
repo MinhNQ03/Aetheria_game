@@ -179,6 +179,20 @@ export class Game {
     return true;
   }
 
+  /**
+   * DEV-ONLY: teleport the player (used by automated capture to reach the world
+   * boundary without a long walk). Goes through Player.setSpawn so the
+   * MovementController abstraction stays intact: velocity resets and the visual
+   * syncs. Not used by any gameplay path.
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   * @param {number} [rotation]
+   */
+  devSetPlayerPosition(x, y, z, rotation = 0) {
+    this.player.setSpawn({ x, y, z, rotation });
+  }
+
   render() {
     const world = this.world;
     if (!world) return;

@@ -85,9 +85,15 @@ async function main() {
   };
 
   try {
-    const resp = await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 20000 });
+    // domcontentloaded is enough (and faster/steadier than networkidle under a
+    // loaded dev machine + headless SwiftShader).
+    const resp = await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     report.status = resp ? resp.status() : null;
-    await page.waitForSelector('#game-canvas', { timeout: 10000 });
+    // Assert the canvas is attached to the DOM. A full-viewport <canvas> can
+    // intermittently fail Playwright's stricter 'visible' check even when on
+    // screen; the WebGL context check below confirms it's actually drawing.
+    // Timeout is generous because headless startup can be slow on a busy host.
+    await page.waitForSelector('#game-canvas', { state: 'attached', timeout: 30000 });
     await sleep(SETTLE_MS);
 
     report.canvas = await page.evaluate(() => {
@@ -164,27 +170,47 @@ async function main() {
     // --- Movement sanity (no screenshot; overlay assertion only) ---
     report.tests.forward = await move(['KeyW'], 800);
 
-    // --- Collision: push +X,+Z toward the crate cluster (centres ~3..5,5..7).
-    //     Assert the player ends up outside the cluster interior. ---
+    // --- Collision: push +X,+Z into the crate cluster, then assert the player
+    //     is OUTSIDE every crate collider (geometry-based, not a loose box).
+    //     Crates (centre, half-extent) from maps/TestWorld.js; player radius 0.5.
+    //     Inside an inflated AABB (half + radius) would mean penetration. ---
+    const PLAYER_RADIUS = 0.5;
+    const CRATES = [
+      { x: 3, z: 5, halfX: 0.75, halfZ: 0.75 },
+      { x: 5, z: 5, halfX: 0.75, halfZ: 0.75 },
+      { x: 4, z: 7, halfX: 1.0, halfZ: 1.0 },
+    ];
     await move(['KeyS'], 400);
     const col = await move(['KeyW', 'KeyD'], 1500);
+    const insideAny = (p) =>
+      CRATES.some(
+        (c) =>
+          Math.abs(p.x - c.x) < c.halfX + PLAYER_RADIUS - 1e-3 &&
+          Math.abs(p.z - c.z) < c.halfZ + PLAYER_RADIUS - 1e-3
+      );
     report.tests.collision = {
       end: col.after,
-      blocked: col.after
-        ? !(col.after.x > 2.8 && col.after.x < 4.7 &&
-            col.after.z > 4.8 && col.after.z < 7.2)
-        : null,
+      // blocked === true means the player did not penetrate any crate.
+      blocked: col.after ? !insideAny(col.after) : null,
     };
 
-    // --- World boundary: bounds +/-48, radius 0.5 => clamp at ~47.5.
-    //     Walk +X long enough to actually reach the edge from wherever the
-    //     player currently is (max span ~96 units at 6 u/s ≈ 16s; 9s is plenty
-    //     from the mid-field position after the collision test). ---
-    const far = await move(['KeyD'], 9000);
+    // --- World boundary (fast): teleport near maxX via the DEV hook, then
+    //     push +X briefly. Avoids a multi-second walk. bounds +/-48, player
+    //     radius 0.5 => clamp at x ≈ 47.5. ---
+    const teleported = await page.evaluate(() => {
+      if (window.__game && typeof window.__game.devSetPlayerPosition === 'function') {
+        window.__game.devSetPlayerPosition(46, 0, 0, 0);
+        return true;
+      }
+      return false;
+    });
+    report.tests.devHook = teleported;
+    await sleep(100);
+    const far = await move(['KeyD'], 600);
     const bx = far.after ? far.after.x : null;
     report.tests.boundary = {
       end: far.after,
-      // Clamped at ~47.5 and never beyond the hard max (48).
+      // Clamped at ~47.5, never beyond the hard max (48).
       clamped: bx != null ? bx <= 48 && bx >= 47 : null,
     };
     await shoot('04-boundary.png');

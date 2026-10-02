@@ -1,6 +1,12 @@
 import { Vector3 } from 'three';
 import { ENEMY_STATES } from '../utils/constants.js';
 
+/** Behaviour modes a map can assign to an enemy. */
+export const ENEMY_MODES = Object.freeze({
+  GUARD: 'guard',
+  PATROL: 'patrol',
+});
+
 /**
  * Enemy AI as a small, explicit state machine. It reads the enemy's current
  * position and the target (player) position, decides a state, and outputs a
@@ -8,26 +14,35 @@ import { ENEMY_STATES } from '../utils/constants.js';
  * objects and never mutates position — the Enemy facade applies the result
  * (so collision/boundary stay in one place).
  *
- * States: idle | patrol | chase | dead.
- *   - idle:   no patrol route; stand and watch for the player.
- *   - patrol: walk between waypoints; detect the player en route.
- *   - chase:  head toward the player until it escapes loseTargetRadius.
- *   - dead:   terminal; produces no movement.
+ * The `mode` chooses the enemy's non-combat base behaviour:
+ *   - guard:  base state is `idle`; stand until the player enters detection,
+ *             chase, then return to `idle` on losing the target.
+ *   - patrol: base state is `patrol`; walk the waypoint loop, chase on detect,
+ *             then return to `patrol` on losing the target.
  *
+ * States: idle | patrol | chase | dead.
  * loseTargetRadius > detectionRadius gives hysteresis so the state doesn't
  * flicker at the detection edge.
  */
 export class EnemyAIController {
   /**
-   * @param {object} config resolved enemy config (ENEMY_CONFIG + overrides)
-   * @param {Array<[number,number,number]>} [patrolPoints] world-space points
+   * @param {object} aiConfig resolved AI config (detection/loseTarget/speeds/…)
+   * @param {object} [options]
+   * @param {string} [options.mode] 'guard' | 'patrol' (defaults to guard)
+   * @param {Array<[number,number,number]>} [options.patrol] waypoints
    */
-  constructor(config, patrolPoints = []) {
-    this._config = config;
-    this._patrol = patrolPoints.map((p) => new Vector3(p[0], p[1] ?? 0, p[2]));
+  constructor(aiConfig, { mode, patrol = [] } = {}) {
+    this._config = aiConfig;
+    this._patrol = patrol.map((p) => new Vector3(p[0], p[1] ?? 0, p[2]));
     this._patrolIndex = 0;
 
-    this.state = this._patrol.length > 0 ? ENEMY_STATES.PATROL : ENEMY_STATES.IDLE;
+    this._mode = this._resolveMode(mode);
+    // Base (non-chase) state is derived from the mode, not from data shape.
+    this._baseState =
+      this._mode === ENEMY_MODES.PATROL && this._patrol.length > 0
+        ? ENEMY_STATES.PATROL
+        : ENEMY_STATES.IDLE;
+    this.state = this._baseState;
 
     /** Output written each frame: desired horizontal movement direction. */
     this.moveDir = new Vector3();
@@ -41,6 +56,24 @@ export class EnemyAIController {
     this._toWaypoint = new Vector3();
   }
 
+  /** @returns {string} resolved behaviour mode. */
+  getMode() {
+    return this._mode;
+  }
+
+  /** Validate the requested mode; fall back to guard, warning in dev. */
+  _resolveMode(mode) {
+    if (mode === ENEMY_MODES.GUARD || mode === ENEMY_MODES.PATROL) {
+      return mode;
+    }
+    if (mode !== undefined && import.meta.env?.DEV) {
+      console.warn(
+        `EnemyAIController: unknown mode "${mode}", falling back to "guard".`
+      );
+    }
+    return ENEMY_MODES.GUARD;
+  }
+
   /** Force the terminal dead state (no more movement). */
   setDead() {
     this.state = ENEMY_STATES.DEAD;
@@ -50,8 +83,9 @@ export class EnemyAIController {
 
   /**
    * Advance the AI one frame. Reads positions; writes moveDir/speed/facing.
+   * @param {number} _deltaTime
    * @param {object} ctx
-   * @param {import('three').Vector3} ctx.position enemy position (read-only here)
+   * @param {import('three').Vector3} ctx.position enemy position (read-only)
    * @param {import('three').Vector3 | null} ctx.targetPosition player position
    */
   update(_deltaTime, { position, targetPosition }) {
@@ -68,8 +102,9 @@ export class EnemyAIController {
 
     // --- State transitions ---
     if (this.state === ENEMY_STATES.CHASE) {
+      // Return to the mode's base state when the target escapes.
       if (distToTarget > cfg.loseTargetRadius) {
-        this.state = this._patrol.length > 0 ? ENEMY_STATES.PATROL : ENEMY_STATES.IDLE;
+        this.state = this._baseState;
       }
     } else if (distToTarget <= cfg.detectionRadius) {
       this.state = ENEMY_STATES.CHASE;

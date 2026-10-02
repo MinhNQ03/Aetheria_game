@@ -83,26 +83,38 @@ export const MOVEMENT_STATES = Object.freeze({
 });
 
 /**
- * Enemy defaults. A map's enemy definition may override any of these via its
- * `behavior`/`stats` fields; see maps/TestWorld.js.
+ * Enemy defaults, split into two concerns:
+ *   - stats: gameplay/movement numbers the entity owns;
+ *   - ai:    perception/behaviour tuning the AI controller reads.
+ *
+ * A map's enemy definition overrides these via `definition.stats` and
+ * `definition.ai`; `definition.behavior` carries metadata (mode, patrol).
+ * See maps/TestWorld.js.
  */
 export const ENEMY_CONFIG = Object.freeze({
-  maxHealth: 30,
-  // Patrol/idle wander speed vs. chase speed (units/second).
-  moveSpeed: 2.2,
-  chaseSpeed: 3.6,
-  // Footprint radius for static collision resolution.
-  radius: 0.5,
-  // How close the player must be to start chasing.
-  detectionRadius: 10,
-  // Must exceed detectionRadius to avoid state flicker at the edge.
-  loseTargetRadius: 16,
-  // How quickly the model turns to face its heading (per second).
-  rotationSpeed: 8,
-  // Distance from a patrol point at which it's considered reached.
-  waypointThreshold: 0.4,
-  // How close the enemy stops when chasing (so it doesn't jitter on the player).
-  chaseStopDistance: 1.2,
+  stats: Object.freeze({
+    maxHealth: 30,
+    // Patrol/idle wander speed vs. chase speed (units/second).
+    moveSpeed: 2.2,
+    chaseSpeed: 3.6,
+    // Footprint radius for static collision resolution.
+    radius: 0.5,
+    // How quickly the model turns to face its heading (per second).
+    rotationSpeed: 8,
+  }),
+  ai: Object.freeze({
+    // How close the player must be to start chasing.
+    detectionRadius: 10,
+    // Must exceed detectionRadius to avoid state flicker at the edge.
+    loseTargetRadius: 16,
+    // Distance from a patrol point at which it's considered reached.
+    waypointThreshold: 0.4,
+    // How close the enemy stops when chasing (so it doesn't jitter).
+    chaseStopDistance: 1.2,
+    // Speeds the AI uses when issuing headings (mirrors stats for convenience).
+    moveSpeed: 2.2,
+    chaseSpeed: 3.6,
+  }),
 });
 
 /** Enemy AI / lifecycle states. */

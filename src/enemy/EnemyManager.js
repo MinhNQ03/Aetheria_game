@@ -48,9 +48,12 @@ export class EnemyManager {
     for (const def of definitions) this.spawn(def);
   }
 
-  /** @returns {Enemy[]} all enemies (including dead-but-not-yet-removed). */
+  /**
+   * @returns {Enemy[]} a snapshot of all enemies (incl. dead-not-yet-removed).
+   * A copy, so callers can't mutate the manager's internal list.
+   */
   getEnemies() {
-    return this._enemies;
+    return [...this._enemies];
   }
 
   /** @returns {Enemy[]} enemies that are still alive. */
@@ -102,11 +105,15 @@ export class EnemyManager {
       }
     }
 
-    // Remove enemies whose death lingered past the delay. Iterate a copy-safe
-    // way (collect, then remove) to avoid mutating during the loop above.
+    // Remove enemies whose death lingered past the delay. Collect first, then
+    // remove — remove() mutates _deadTimers, so we must not iterate it live.
     if (this._deadTimers.size > 0) {
+      let expired = null;
       for (const [enemy, elapsed] of this._deadTimers) {
-        if (elapsed >= this._removeDelay) this.remove(enemy);
+        if (elapsed >= this._removeDelay) (expired ??= []).push(enemy);
+      }
+      if (expired) {
+        for (const enemy of expired) this.remove(enemy);
       }
     }
   }

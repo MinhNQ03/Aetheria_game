@@ -12,21 +12,35 @@ import { HealthComponent } from '../health/HealthComponent.js';
  *    ├── EnemyModel          (visual placeholder; GLB-ready seam)
  *    └── HealthComponent     (hp / damage / death)
  *
+ * Config is split by concern:
+ *   - `_stats`: gameplay/movement numbers the facade uses (maxHealth, speeds,
+ *     radius, rotationSpeed), from ENEMY_CONFIG.stats + definition.stats.
+ *   - `_aiConfig`: perception/behaviour tuning the AI reads, from
+ *     ENEMY_CONFIG.ai + definition.ai.
+ *   - `definition.behavior`: metadata (mode, patrol) passed to the AI.
+ *
  * The facade owns the runtime position and applies AI output to it, resolving
  * static collision + world boundary via the shared CollisionSystem (same as the
  * player). It never reads the player's internals — only `target.getPosition()`.
+ *
+ * After dispose(), the enemy is inert: update/takeDamage are no-ops, no model
+ * updates, no death callbacks.
  */
 export class Enemy {
   /**
    * @param {object} definition map enemy definition (data only)
-   * @param {object} [baseConfig] defaults (ENEMY_CONFIG)
+   * @param {object} [baseConfig] defaults (ENEMY_CONFIG with .stats and .ai)
    */
   constructor(definition, baseConfig = ENEMY_CONFIG) {
     this.id = definition.id;
     this.type = definition.type ?? 'basic';
 
-    // Merge defaults with per-enemy overrides (data-driven tuning).
-    this._config = { ...baseConfig, ...(definition.behavior ?? {}), ...(definition.stats ?? {}) };
+    // Gameplay/movement stats (facade uses these).
+    this._stats = { ...baseConfig.stats, ...(definition.stats ?? {}) };
+    // AI perception/behaviour tuning (AI controller uses these).
+    this._aiConfig = { ...baseConfig.ai, ...(definition.ai ?? {}) };
+
+    const behavior = definition.behavior ?? {};
 
     const [sx, sy, sz] = definition.position ?? [0, 0, 0];
     this.position = new Vector3(sx, sy, sz);
@@ -38,13 +52,14 @@ export class Enemy {
     this._object3D.position.copy(this.position);
     this._model.setFacingAngle(this.facing);
 
-    const patrol = definition.behavior?.patrol ?? [];
-    this._ai = new EnemyAIController(this._config, patrol);
+    this._ai = new EnemyAIController(this._aiConfig, {
+      mode: behavior.mode,
+      patrol: behavior.patrol ?? [],
+    });
 
-    this.health = new HealthComponent(this._config.maxHealth);
+    this.health = new HealthComponent(this._stats.maxHealth);
     this._offDeath = this.health.onDeath(() => this._onDeath());
 
-    this._removed = false;
     this._disposed = false;
   }
 
@@ -76,25 +91,32 @@ export class Enemy {
     return this.health.isDead();
   }
 
+  /** @returns {boolean} whether dispose() has run. */
+  isDisposed() {
+    return this._disposed;
+  }
+
   /**
-   * Apply damage. Death is handled via the health death callback.
+   * Apply damage. No-op once disposed. Death is handled via the health death
+   * callback.
    * @param {number} amount
    * @returns {number} damage applied
    */
   takeDamage(amount) {
+    if (this._disposed) return 0;
     return this.health.takeDamage(amount);
   }
 
   /**
    * Advance one frame: AI decides, facade integrates + collides + syncs model.
+   * No-op once disposed or dead.
    * @param {number} deltaTime seconds
    * @param {object} ctx
    * @param {{ getPosition(): import('three').Vector3 } | null} [ctx.target]
    * @param {{ getGroundHeight(x,z): number, getCollision(): object }} [ctx.world]
    */
   update(deltaTime, { target, world } = {}) {
-    if (this.isDead()) {
-      // Dead: no AI, no movement. Still cheap to skip here.
+    if (this._disposed || this.isDead()) {
       this.velocity.set(0, 0, 0);
       return;
     }
@@ -110,7 +132,7 @@ export class Enemy {
 
     // Static collision + boundary (shared system — same as the player).
     const collision = world?.getCollision?.();
-    if (collision) collision.resolve(this.position, this._config.radius);
+    if (collision) collision.resolve(this.position, this._stats.radius);
 
     // Ground height.
     this.position.y = world?.getGroundHeight
@@ -124,7 +146,7 @@ export class Enemy {
       this.facing = this._approachAngle(
         this.facing,
         this._ai.facing,
-        this._config.rotationSpeed * deltaTime
+        this._stats.rotationSpeed * deltaTime
       );
     }
 
@@ -146,14 +168,13 @@ export class Enemy {
     return current + diff * MathUtils.clamp(t, 0, 1);
   }
 
-  /** Free GPU resources + listeners. Idempotent. */
+  /** Free GPU resources + listeners. Idempotent; makes the enemy inert. */
   dispose() {
     if (this._disposed) return;
     this._disposed = true;
     if (this._offDeath) this._offDeath();
     this.health.clearListeners();
     this._model.dispose();
-    // Detach from any parent scene node.
     this._object3D.removeFromParent?.();
   }
 }
