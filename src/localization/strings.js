@@ -18,6 +18,11 @@ export const STRINGS = {
       map: 'Bản đồ',
       player: 'Nhân vật',
       language: 'Ngôn ngữ',
+      state: 'Trạng thái',
+      speed: 'Tốc độ',
+      camera: 'Máy quay',
+      stateIdle: 'Đứng yên',
+      stateMoving: 'Di chuyển',
     },
     language: {
       vi: 'Tiếng Việt',
@@ -43,6 +48,11 @@ export const STRINGS = {
       map: 'Map',
       player: 'Player',
       language: 'Language',
+      state: 'State',
+      speed: 'Speed',
+      camera: 'Camera',
+      stateIdle: 'Idle',
+      stateMoving: 'Moving',
     },
     language: {
       vi: 'Vietnamese',

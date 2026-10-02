@@ -56,10 +56,11 @@ export class Game {
   /** Wire everything up and start the loop. */
   start() {
     // Place the player into the world and follow it.
-    this.world.scene.add(this.player.object3D);
-    this.camera.setTarget(this.player.object3D);
+    this.world.scene.add(this.player.getObject3D());
+    this.camera.setTarget(this.player.getObject3D());
 
     this.input.attach();
+    this.input.attachPointer(this._canvas); // mouse-drag camera orbit
     this.debug.mount();
 
     window.addEventListener('resize', this._onResize);
@@ -74,11 +75,20 @@ export class Game {
    * @param {number} deltaTime seconds.
    */
   update(deltaTime) {
-    this.player.update(deltaTime, this.input);
+    // Feed accumulated mouse-drag into the camera orbit first, so movement
+    // this frame is relative to the up-to-date camera yaw.
+    const { dx, dy } = this.input.consumePointerDelta();
+    this.camera.orbit(dx, dy);
+
+    this.player.update(deltaTime, {
+      input: this.input,
+      cameraYaw: this.camera.getYaw(),
+      world: this.world,
+    });
     this.camera.update(deltaTime);
 
     // Mirror the live player position into serializable state.
-    const p = this.player.position;
+    const p = this.player.getPosition();
     this.state.player.position.x = p.x;
     this.state.player.position.y = p.y;
     this.state.player.position.z = p.z;
@@ -88,6 +98,9 @@ export class Game {
       mapName: this.state.currentMap,
       playerPosition: this.state.player.position,
       language: this.localization.language,
+      movementState: this.player.getMovementState(),
+      speed: this.player.getSpeed(),
+      cameraPosition: this.camera.getPosition(),
     });
   }
 

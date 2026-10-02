@@ -41,7 +41,15 @@ export class DebugOverlay {
     });
 
     // One row per metric; label text filled by _renderLabels().
-    for (const key of ['fps', 'map', 'player', 'language']) {
+    for (const key of [
+      'fps',
+      'map',
+      'player',
+      'state',
+      'speed',
+      'camera',
+      'language',
+    ]) {
       const row = document.createElement('div');
       el.appendChild(row);
       this._rows[key] = row;
@@ -75,8 +83,19 @@ export class DebugOverlay {
    * @param {string} data.mapName
    * @param {{x:number,y:number,z:number}} data.playerPosition
    * @param {string} data.language active language code.
+   * @param {string} [data.movementState] one of MOVEMENT_STATES.
+   * @param {number} [data.speed] current player speed.
+   * @param {{x:number,y:number,z:number}} [data.cameraPosition]
    */
-  update({ deltaTime, mapName, playerPosition, language }) {
+  update({
+    deltaTime,
+    mapName,
+    playerPosition,
+    language,
+    movementState,
+    speed,
+    cameraPosition,
+  }) {
     if (!this._el) return;
 
     this._updateFps(deltaTime);
@@ -84,6 +103,9 @@ export class DebugOverlay {
     this._lastMap = mapName;
     this._lastPos = playerPosition;
     this._lastLang = language;
+    this._lastState = movementState;
+    this._lastSpeed = speed;
+    this._lastCamPos = cameraPosition;
 
     this._renderValues();
   }
@@ -122,6 +144,22 @@ export class DebugOverlay {
       this._rows.player.textContent = `${t('debug.player')}: ${fmt(
         pos.x
       )} / ${fmt(pos.y)} / ${fmt(pos.z)}`;
+    }
+    if (this._rows.state) {
+      // Map the state code to a localized label (idle/moving).
+      const stateKey =
+        this._lastState === 'moving' ? 'debug.stateMoving' : 'debug.stateIdle';
+      this._rows.state.textContent = `${t('debug.state')}: ${t(stateKey)}`;
+    }
+    if (this._rows.speed) {
+      const spd = typeof this._lastSpeed === 'number' ? this._lastSpeed : 0;
+      this._rows.speed.textContent = `${t('debug.speed')}: ${fmt(spd)}`;
+    }
+    if (this._rows.camera) {
+      const c = this._lastCamPos || { x: 0, y: 0, z: 0 };
+      this._rows.camera.textContent = `${t('debug.camera')}: ${fmt(
+        c.x
+      )} / ${fmt(c.y)} / ${fmt(c.z)}`;
     }
     if (this._rows.language) {
       const lang = this._lastLang || this._loc.language;

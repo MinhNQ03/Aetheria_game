@@ -23,25 +23,61 @@ export const RENDER_CONFIG = Object.freeze({
   antialias: true,
 });
 
-/** Third-person camera configuration. */
+/**
+ * Third-person orbit camera configuration.
+ *
+ * The camera sits on a sphere around the player: `distance` back, rotated by a
+ * yaw/pitch the player can orbit with the mouse. `height`/`lookAtHeight` keep
+ * the player framed slightly below centre, which reads well for action RPGs.
+ */
 export const CAMERA_CONFIG = Object.freeze({
   fov: 60,
   near: 0.1,
   far: 1000,
-  // Offset from the follow target, in world units.
-  offset: { x: 0, y: 6, z: 10 },
-  // How far above the target's origin the camera looks.
-  lookAtHeight: 1.2,
-  // Smoothing factor for follow interpolation (0..1 per frame-ish, scaled by dt).
-  followLerp: 6,
+
+  // Orbit geometry.
+  distance: 8, // horizontal+depth distance from the player
+  height: 4, // how high the camera sits above the player's feet
+  lookAtHeight: 1.4, // point the camera looks at, above the player's origin
+
+  // Initial orbit angles (radians). yaw 0 looks down -Z toward the player.
+  initialYaw: 0,
+  initialPitch: 0.32,
+
+  // Pitch clamp so the camera never flips under/over the player.
+  minPitch: -0.35,
+  maxPitch: 1.15,
+
+  // Smoothing (higher = snappier). Scaled by deltaTime for FPS independence.
+  positionSmoothing: 8,
+
+  // Mouse orbit sensitivity (radians per pixel of drag).
+  orbitSensitivity: 0.0045,
 });
 
-/** Player movement configuration. */
+/**
+ * Player movement configuration.
+ *
+ * Movement is camera-relative and uses simple acceleration/deceleration toward
+ * a target velocity so starts/stops feel weighted rather than instant.
+ */
 export const MOVEMENT_CONFIG = Object.freeze({
-  // Units per second.
-  speed: 5,
-  // How quickly the player rotates to face the movement direction (per second).
-  rotationLerp: 10,
+  // Max ground speed, units per second.
+  speed: 6,
+  // How fast velocity ramps up toward the target (units/s^2-ish, scaled by dt).
+  acceleration: 40,
+  // How fast velocity bleeds off when there's no input.
+  deceleration: 30,
+  // How quickly the model turns to face travel direction (per second).
+  rotationSpeed: 12,
+  // Below this speed with no input, the player is considered idle.
+  idleThreshold: 0.05,
+});
+
+/** Discrete movement states. Animation (later) can key off these. */
+export const MOVEMENT_STATES = Object.freeze({
+  IDLE: 'idle',
+  MOVING: 'moving',
 });
 
 /** Logical input actions, decoupled from physical keys. */

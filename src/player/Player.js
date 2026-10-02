@@ -1,98 +1,76 @@
-import {
-  Group,
-  Mesh,
-  CapsuleGeometry,
-  MeshStandardMaterial,
-  Vector3,
-} from 'three';
-import { INPUT_ACTIONS, MOVEMENT_CONFIG } from '../utils/constants.js';
+import { PlayerModel } from './PlayerModel.js';
+import { MovementController } from './MovementController.js';
 
 /**
- * The player entity.
+ * The player entity — a thin facade over two collaborators:
  *
- * STEP 1 is a placeholder: a capsule primitive wrapped in a Group so a real
- * GLB model (with animations) can be dropped in later without changing the
- * entity's public shape. Exposes position/rotation/velocity and an object3D,
- * and reads movement from an InputManager.
+ *   Player
+ *    ├── MovementController   (logic: position, velocity, state, facing)
+ *    └── PlayerModel          (visual: meshes now, GLB + animation later)
+ *
+ * Game only talks to Player (getObject3D/getPosition/getVelocity/
+ * getMovementState and update). Combat, skills, animation, etc. attach to the
+ * movement controller or the model without turning this class into a monolith.
  *
  * No combat, HP, skills, or animation yet.
  */
 export class Player {
   constructor() {
-    this.object3D = new Group();
+    this._model = new PlayerModel();
+    this._movement = new MovementController();
 
-    const geometry = new CapsuleGeometry(0.5, 1, 8, 16);
-    const material = new MeshStandardMaterial({ color: 0x3a7bd5 });
-    this._mesh = new Mesh(geometry, material);
-    // Lift so the capsule rests on the ground (half height + radius).
-    this._mesh.position.y = 1;
-    this.object3D.add(this._mesh);
-
-    this._geometry = geometry;
-    this._material = material;
-
-    // Movement state. position/rotation are proxied to the Group.
-    this.velocity = new Vector3();
-    this._moveDir = new Vector3();
+    // Root the model represents the player in the scene.
+    this._object3D = this._model.getObject3D();
   }
 
-  /** @returns {import('three').Vector3} live position (mutating moves the player). */
-  get position() {
-    return this.object3D.position;
+  /** @returns {import('three').Object3D} root to add to the scene. */
+  getObject3D() {
+    return this._object3D;
   }
 
-  /** @returns {import('three').Euler} live rotation. */
-  get rotation() {
-    return this.object3D.rotation;
+  /** @returns {import('three').Vector3} live world position (feet). */
+  getPosition() {
+    return this._movement.position;
+  }
+
+  /** @returns {import('three').Vector3} live horizontal velocity. */
+  getVelocity() {
+    return this._movement.velocity;
+  }
+
+  /** @returns {number} current horizontal speed. */
+  getSpeed() {
+    return this._movement.getSpeed();
+  }
+
+  /** @returns {string} current movement state (see MOVEMENT_STATES). */
+  getMovementState() {
+    return this._movement.state;
   }
 
   /**
-   * Advance the player using current input.
-   * @param {number} deltaTime seconds since last frame.
-   * @param {import('../input/InputManager.js').InputManager} input
+   * Advance the player by one frame.
+   * @param {number} deltaTime seconds
+   * @param {object} ctx
+   * @param {import('../input/InputManager.js').InputManager} ctx.input
+   * @param {number} ctx.cameraYaw yaw the camera looks along (radians)
+   * @param {{ getGroundHeight(x: number, z: number): number }} [ctx.world]
    */
-  update(deltaTime, input) {
-    // Build a movement direction on the XZ plane from logical actions.
-    // Forward is -Z (into the screen), matching the camera offset.
-    let x = 0;
-    let z = 0;
-    if (input.isPressed(INPUT_ACTIONS.FORWARD)) z -= 1;
-    if (input.isPressed(INPUT_ACTIONS.BACKWARD)) z += 1;
-    if (input.isPressed(INPUT_ACTIONS.LEFT)) x -= 1;
-    if (input.isPressed(INPUT_ACTIONS.RIGHT)) x += 1;
+  update(deltaTime, { input, cameraYaw, world }) {
+    this._movement.update(deltaTime, { input, cameraYaw, world });
 
-    this._moveDir.set(x, 0, z);
-
-    if (this._moveDir.lengthSq() > 0) {
-      this._moveDir.normalize();
-      this.velocity
-        .copy(this._moveDir)
-        .multiplyScalar(MOVEMENT_CONFIG.speed);
-
-      // Face the direction of travel, smoothly.
-      const targetAngle = Math.atan2(this._moveDir.x, this._moveDir.z);
-      this._rotateTowards(targetAngle, deltaTime);
-    } else {
-      this.velocity.set(0, 0, 0);
-    }
-
-    // Integrate position.
-    this.position.x += this.velocity.x * deltaTime;
-    this.position.z += this.velocity.z * deltaTime;
-  }
-
-  _rotateTowards(targetAngle, deltaTime) {
-    const current = this.object3D.rotation.y;
-    // Shortest angular distance in (-PI, PI].
-    let diff = targetAngle - current;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    const t = Math.min(1, MOVEMENT_CONFIG.rotationLerp * deltaTime);
-    this.object3D.rotation.y = current + diff * t;
+    // Apply movement results to the visual.
+    const p = this._movement.position;
+    this._object3D.position.set(p.x, p.y, p.z);
+    this._model.setFacingAngle(this._movement.facing);
+    this._model.update(deltaTime, {
+      state: this._movement.state,
+      speed: this._movement.getSpeed(),
+    });
   }
 
   /** Free GPU resources. */
   dispose() {
-    this._geometry.dispose();
-    this._material.dispose();
+    this._model.dispose();
   }
 }

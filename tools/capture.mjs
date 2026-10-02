@@ -2,13 +2,16 @@
  * UI capture tool (development only — NOT part of the game/build).
  *
  * Launches the installed Chrome (headless) via Playwright, opens the running
- * dev server, lets the WebGL scene render, drives a few inputs, and writes
- * screenshots + a console/error report to tools/shots/. The agent reads those
- * PNGs to "see" the game.
+ * dev server, lets the WebGL scene render, drives inputs (keyboard + mouse
+ * drag), and writes screenshots + a JSON report to tools/shots/. The agent
+ * reads those PNGs/JSON to "see" and verify the game.
+ *
+ * IMPORTANT: this is an AUTOMATED WebGL render test. Headless Chrome renders
+ * WebGL via ANGLE/SwiftShader (software), which proves the scene draws and the
+ * logic runs — it is NOT a measure of real hardware-GPU rendering or FPS.
  *
  * Usage (from project root, with node on PATH):
- *   node tools/capture.mjs [baseUrl]
- *   # default baseUrl: http://localhost:5173
+ *   node tools/capture.mjs [baseUrl]      # default http://localhost:5173
  *
  * Requires a dev server already running (npm run dev). This script does not
  * start it, so capture and serving stay decoupled.
@@ -23,20 +26,28 @@ const OUT_DIR = join(__dirname, 'shots');
 const BASE_URL = process.argv[2] || 'http://localhost:5173';
 
 const VIEWPORT = { width: 1280, height: 720 };
-// Give the rAF loop time to render a few frames before each shot.
-const SETTLE_MS = 1200;
+const SETTLE_MS = 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Parse "x / y / z" out of a debug-overlay line that starts with `label`. */
+function parseVec(overlayText, label) {
+  const line = overlayText
+    .split('\n')
+    .find((l) => l.trim().startsWith(label));
+  if (!line) return null;
+  const nums = line.match(/-?\d+\.\d+/g);
+  if (!nums || nums.length < 3) return null;
+  return { x: +nums[0], y: +nums[1], z: +nums[2] };
+}
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
 
   const browser = await chromium.launch({
-    channel: 'chrome', // use the Chrome already installed on this machine
+    channel: 'chrome',
     headless: true,
     args: [
-      // Enable GPU/WebGL in headless via ANGLE's software backend so WebGL
-      // renders deterministically without a physical GPU.
       '--use-gl=angle',
       '--use-angle=swiftshader',
       '--enable-webgl',
@@ -48,12 +59,20 @@ async function main() {
 
   const consoleLines = [];
   const errors = [];
-  page.on('console', (msg) =>
-    consoleLines.push(`[${msg.type()}] ${msg.text()}`)
-  );
+  page.on('console', (msg) => consoleLines.push(`[${msg.type()}] ${msg.text()}`));
   page.on('pageerror', (err) => errors.push(String(err)));
 
-  const report = { baseUrl: BASE_URL, shots: [], consoleLines, errors };
+  const report = { baseUrl: BASE_URL, shots: [], tests: {}, consoleLines, errors };
+
+  const overlay = () =>
+    page.evaluate(() => {
+      const el = document.getElementById('debug-overlay');
+      return el ? el.innerText : '';
+    });
+
+  // Center of the canvas, used as the origin for mouse-drag orbit.
+  const cx = VIEWPORT.width / 2;
+  const cy = VIEWPORT.height / 2;
 
   try {
     const resp = await page.goto(BASE_URL, {
@@ -62,13 +81,12 @@ async function main() {
     });
     report.status = resp ? resp.status() : null;
 
-    // Confirm the canvas exists and has a non-zero drawing buffer.
     await page.waitForSelector('#game-canvas', { timeout: 10000 });
     await sleep(SETTLE_MS);
+
     report.canvas = await page.evaluate(() => {
       const c = document.getElementById('game-canvas');
-      const gl =
-        c.getContext('webgl2') || c.getContext('webgl');
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
       return {
         width: c.width,
         height: c.height,
@@ -83,31 +101,98 @@ async function main() {
     });
 
     const shoot = async (name) => {
-      const file = join(OUT_DIR, name);
-      await page.screenshot({ path: file });
+      await page.screenshot({ path: join(OUT_DIR, name) });
       report.shots.push(name);
     };
 
-    // 1) Default view (language = vi).
-    await shoot('01-default-vi.png');
+    // The player-position label differs by language; capture starts in vi.
+    const PLAYER_LABEL_VI = 'Nhân vật';
 
-    // 2) Hold forward (W) for ~1s so the player visibly moves.
-    await page.keyboard.down('KeyW');
-    await sleep(1000);
-    await page.keyboard.up('KeyW');
-    await sleep(300);
-    await shoot('02-moved-forward.png');
+    // --- Baseline ---
+    await shoot('01-default.png');
+    report.tests.overlayStart = await overlay();
 
-    // 3) Toggle language to EN (press L) — proves localized overlay updates.
-    await page.keyboard.press('KeyL');
+    // Hold a key for `ms`, return the distance travelled on the XZ plane.
+    const measureMove = async (keys, ms) => {
+      const before = parseVec(await overlay(), PLAYER_LABEL_VI);
+      for (const k of keys) await page.keyboard.down(k);
+      await sleep(ms);
+      for (const k of keys) await page.keyboard.up(k);
+      await sleep(250); // let deceleration settle a touch
+      const after = parseVec(await overlay(), PLAYER_LABEL_VI);
+      const dist =
+        before && after
+          ? Math.hypot(after.x - before.x, after.z - before.z)
+          : null;
+      return { before, after, dist };
+    };
+
+    // --- Test: forward (W) ---
+    report.tests.forward = await measureMove(['KeyW'], 900);
+    await shoot('02-forward.png');
+
+    // --- Test: backward (S) ---
+    report.tests.backward = await measureMove(['KeyS'], 600);
+
+    // --- Test: strafe left/right (A, D) ---
+    report.tests.left = await measureMove(['KeyA'], 600);
+    report.tests.right = await measureMove(['KeyD'], 600);
+    await shoot('03-strafed.png');
+
+    // --- Test: diagonal must NOT be faster than single axis ---
+    // Compare distance over the same duration for W vs W+D.
+    const straight = await measureMove(['KeyW'], 700);
+    const diagonal = await measureMove(['KeyW', 'KeyD'], 700);
+    report.tests.diagonalCheck = {
+      straightDist: straight.dist,
+      diagonalDist: diagonal.dist,
+      // true if diagonal isn't meaningfully faster (<5% over straight).
+      ok:
+        straight.dist != null &&
+        diagonal.dist != null &&
+        diagonal.dist <= straight.dist * 1.05,
+    };
+    await shoot('04-after-diagonal.png');
+
+    // --- Test: camera orbit via mouse drag ---
+    const camBefore = parseVec(await overlay(), 'Máy quay');
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    // Drag right across the canvas.
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(cx + i * 24, cy);
+      await sleep(16);
+    }
+    await page.mouse.up();
     await sleep(400);
-    await shoot('03-language-en.png');
+    const camAfter = parseVec(await overlay(), 'Máy quay');
+    report.tests.cameraOrbit = {
+      before: camBefore,
+      after: camAfter,
+      moved:
+        camBefore && camAfter
+          ? Math.hypot(
+              camAfter.x - camBefore.x,
+              camAfter.z - camBefore.z
+            ) > 0.1
+          : null,
+    };
+    await shoot('05-camera-orbited.png');
 
-    // 4) Read the debug overlay text so we can verify it in text form too.
-    report.overlayText = await page.evaluate(() => {
-      const el = document.getElementById('debug-overlay');
-      return el ? el.innerText : null;
+    // --- Test: language toggle (L) ---
+    await page.keyboard.press('KeyL');
+    await sleep(300);
+    report.tests.overlayEN = await overlay();
+    await shoot('06-language-en.png');
+
+    // --- Test: resize ---
+    await page.setViewportSize({ width: 900, height: 600 });
+    await sleep(400);
+    report.tests.resizedCanvas = await page.evaluate(() => {
+      const c = document.getElementById('game-canvas');
+      return { width: c.width, height: c.height };
     });
+    await shoot('07-resized.png');
   } catch (err) {
     report.fatal = String(err);
   } finally {
@@ -119,7 +204,6 @@ async function main() {
     await browser.close();
   }
 
-  // Surface a short summary on stdout for the exit-code path.
   console.log('CAPTURE_OK shots=' + report.shots.length);
   if (report.errors.length || report.fatal) {
     console.log('CAPTURE_HAS_ERRORS');

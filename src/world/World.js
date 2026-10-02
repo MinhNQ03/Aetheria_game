@@ -78,6 +78,21 @@ export class World {
     }
   }
 
+  /**
+   * Ground height at a world XZ position.
+   *
+   * The test world is a flat plane at y=0, so this is constant for now. It
+   * exists as a seam: later maps can override it with terrain, a heightmap, or
+   * a collision raycast without the Player having to know how ground works.
+   *
+   * @param {number} _x world X
+   * @param {number} _z world Z
+   * @returns {number} ground Y at that position
+   */
+  getGroundHeight(_x, _z) {
+    return 0;
+  }
+
   _track(geometry, material) {
     this._disposables.push(geometry, material);
   }

@@ -16,19 +16,27 @@ const DEFAULT_KEY_MAP = {
 };
 
 /**
- * Keyboard input, exposed as logical actions rather than raw keys so that
- * gameplay code (e.g. a future PlayerController) never touches key codes.
+ * Keyboard + mouse input, exposed as logical actions and consumable deltas so
+ * gameplay/camera code never touches raw DOM events or key codes.
+ *
+ * Keyboard: isPressed(action) for held movement actions.
+ * Mouse: drag (any button) over the canvas accumulates an orbit delta; the
+ * camera reads it once per frame via consumePointerDelta(), which also resets
+ * it. This keeps a single input abstraction (no second input system) and plays
+ * nicely with headless capture (no pointer-lock requirement).
  *
  * Usage:
  *   const input = new InputManager();
- *   input.attach();
+ *   input.attach();                 // keyboard on window
+ *   input.attachPointer(canvas);    // mouse orbit on the canvas
  *   if (input.isPressed(INPUT_ACTIONS.FORWARD)) { ... }
- *   input.detach(); // on teardown
+ *   const { dx, dy } = input.consumePointerDelta();
+ *   input.detach();                 // on teardown
  */
 export class InputManager {
   /**
    * @param {Record<string, string>} [keyMap] custom code -> action map.
-   * @param {EventTarget} [target] element to listen on (defaults to window).
+   * @param {EventTarget} [target] element to listen on for keys (default window).
    */
   constructor(keyMap = DEFAULT_KEY_MAP, target = window) {
     this._keyMap = keyMap;
@@ -37,13 +45,26 @@ export class InputManager {
     this._active = new Set();
     this._attached = false;
 
+    // Pointer (mouse) orbit state.
+    this._pointerTarget = null;
+    this._pointerAttached = false;
+    this._dragging = false;
+    this._lastX = 0;
+    this._lastY = 0;
+    // Accumulated, unconsumed drag delta in pixels.
+    this._pointerDX = 0;
+    this._pointerDY = 0;
+
     // Bind once so attach/detach use the same references.
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
     this._onBlur = this._onBlur.bind(this);
+    this._onPointerDown = this._onPointerDown.bind(this);
+    this._onPointerMove = this._onPointerMove.bind(this);
+    this._onPointerUp = this._onPointerUp.bind(this);
   }
 
-  /** Start listening for input. */
+  /** Start listening for keyboard input. */
   attach() {
     if (this._attached) return;
     this._target.addEventListener('keydown', this._onKeyDown);
@@ -53,14 +74,41 @@ export class InputManager {
     this._attached = true;
   }
 
-  /** Stop listening and clear state. */
+  /**
+   * Start listening for mouse-drag orbit on a specific element (the canvas).
+   * @param {HTMLElement} element
+   */
+  attachPointer(element) {
+    if (this._pointerAttached) return;
+    this._pointerTarget = element;
+    element.addEventListener('pointerdown', this._onPointerDown);
+    // Move/up on window so a drag that leaves the canvas still tracks.
+    window.addEventListener('pointermove', this._onPointerMove);
+    window.addEventListener('pointerup', this._onPointerUp);
+    this._pointerAttached = true;
+  }
+
+  /** Stop listening and clear all state. */
   detach() {
-    if (!this._attached) return;
-    this._target.removeEventListener('keydown', this._onKeyDown);
-    this._target.removeEventListener('keyup', this._onKeyUp);
-    this._target.removeEventListener('blur', this._onBlur);
-    this._active.clear();
-    this._attached = false;
+    if (this._attached) {
+      this._target.removeEventListener('keydown', this._onKeyDown);
+      this._target.removeEventListener('keyup', this._onKeyUp);
+      this._target.removeEventListener('blur', this._onBlur);
+      this._active.clear();
+      this._attached = false;
+    }
+    if (this._pointerAttached) {
+      this._pointerTarget.removeEventListener(
+        'pointerdown',
+        this._onPointerDown
+      );
+      window.removeEventListener('pointermove', this._onPointerMove);
+      window.removeEventListener('pointerup', this._onPointerUp);
+      this._pointerAttached = false;
+      this._dragging = false;
+      this._pointerDX = 0;
+      this._pointerDY = 0;
+    }
   }
 
   /**
@@ -69,6 +117,18 @@ export class InputManager {
    */
   isPressed(action) {
     return this._active.has(action);
+  }
+
+  /**
+   * Read and reset the accumulated mouse-drag delta (pixels) since last call.
+   * @returns {{dx: number, dy: number}}
+   */
+  consumePointerDelta() {
+    const dx = this._pointerDX;
+    const dy = this._pointerDY;
+    this._pointerDX = 0;
+    this._pointerDY = 0;
+    return { dx, dy };
   }
 
   _onKeyDown(event) {
@@ -89,5 +149,24 @@ export class InputManager {
 
   _onBlur() {
     this._active.clear();
+    this._dragging = false;
+  }
+
+  _onPointerDown(event) {
+    this._dragging = true;
+    this._lastX = event.clientX;
+    this._lastY = event.clientY;
+  }
+
+  _onPointerMove(event) {
+    if (!this._dragging) return;
+    this._pointerDX += event.clientX - this._lastX;
+    this._pointerDY += event.clientY - this._lastY;
+    this._lastX = event.clientX;
+    this._lastY = event.clientY;
+  }
+
+  _onPointerUp() {
+    this._dragging = false;
   }
 }
