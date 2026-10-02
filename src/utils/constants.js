@@ -72,6 +72,8 @@ export const MOVEMENT_CONFIG = Object.freeze({
   rotationSpeed: 12,
   // Below this speed with no input, the player is considered idle.
   idleThreshold: 0.05,
+  // Player footprint radius used for static collision resolution.
+  radius: 0.5,
 });
 
 /** Discrete movement states. Animation (later) can key off these. */

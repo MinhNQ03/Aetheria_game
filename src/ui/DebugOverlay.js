@@ -48,6 +48,8 @@ export class DebugOverlay {
       'state',
       'speed',
       'camera',
+      'assets',
+      'colliders',
       'language',
     ]) {
       const row = document.createElement('div');
@@ -86,6 +88,8 @@ export class DebugOverlay {
    * @param {string} [data.movementState] one of MOVEMENT_STATES.
    * @param {number} [data.speed] current player speed.
    * @param {{x:number,y:number,z:number}} [data.cameraPosition]
+   * @param {number} [data.assetCount] cached asset count.
+   * @param {number} [data.colliderCount] static collider count.
    */
   update({
     deltaTime,
@@ -95,6 +99,8 @@ export class DebugOverlay {
     movementState,
     speed,
     cameraPosition,
+    assetCount,
+    colliderCount,
   }) {
     if (!this._el) return;
 
@@ -106,6 +112,8 @@ export class DebugOverlay {
     this._lastState = movementState;
     this._lastSpeed = speed;
     this._lastCamPos = cameraPosition;
+    this._lastAssetCount = assetCount;
+    this._lastColliderCount = colliderCount;
 
     this._renderValues();
   }
@@ -160,6 +168,14 @@ export class DebugOverlay {
       this._rows.camera.textContent = `${t('debug.camera')}: ${fmt(
         c.x
       )} / ${fmt(c.y)} / ${fmt(c.z)}`;
+    }
+    if (this._rows.assets) {
+      const n = this._lastAssetCount ?? 0;
+      this._rows.assets.textContent = `${t('debug.assets')}: ${n}`;
+    }
+    if (this._rows.colliders) {
+      const n = this._lastColliderCount ?? 0;
+      this._rows.colliders.textContent = `${t('debug.colliders')}: ${n}`;
     }
     if (this._rows.language) {
       const lang = this._lastLang || this._loc.language;

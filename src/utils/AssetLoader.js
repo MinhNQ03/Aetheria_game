@@ -1,26 +1,29 @@
-import {
-  TextureLoader,
-  LoadingManager,
-} from 'three';
+import { TextureLoader, LoadingManager } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 /**
- * Thin wrapper around Three.js loaders with a shared LoadingManager.
+ * Shared asset pipeline: textures and GLB/GLTF models behind one cache and one
+ * LoadingManager (so a loading screen can hook progress later).
  *
- * STEP 1 only wires up texture loading and progress tracking so later steps
- * (GLB models, audio, etc.) can register their own loaders on the same manager
- * without reworking the asset pipeline. No external assets are loaded yet.
+ * Caching is by URL. Models are cached as their parsed GLTF; callers that place
+ * a model in a scene should clone the returned scene so multiple placements and
+ * multiple maps don't share one Object3D. The cache is owned by the loader, not
+ * by any single map — maps dispose their own instances, never the cache.
  */
 export class AssetLoader {
   constructor() {
     this.manager = new LoadingManager();
     this.textureLoader = new TextureLoader(this.manager);
+    this.gltfLoader = new GLTFLoader(this.manager);
 
-    /** Simple in-memory cache keyed by URL. */
-    this._cache = new Map();
+    /** URL -> Texture */
+    this._textureCache = new Map();
+    /** URL -> GLTF (parsed) */
+    this._modelCache = new Map();
   }
 
   /**
-   * Register progress callbacks. Useful for a loading screen in later steps.
+   * Register progress callbacks (for a future loading screen).
    * @param {object} handlers
    * @param {() => void} [handlers.onStart]
    * @param {(url: string, loaded: number, total: number) => void} [handlers.onProgress]
@@ -40,29 +43,73 @@ export class AssetLoader {
    * @returns {Promise<import('three').Texture>}
    */
   loadTexture(url) {
-    if (this._cache.has(url)) {
-      return Promise.resolve(this._cache.get(url));
+    if (this._textureCache.has(url)) {
+      return Promise.resolve(this._textureCache.get(url));
     }
     return new Promise((resolve, reject) => {
       this.textureLoader.load(
         url,
         (texture) => {
-          this._cache.set(url, texture);
+          this._textureCache.set(url, texture);
           resolve(texture);
         },
         undefined,
-        (err) => reject(err)
+        (err) =>
+          reject(new Error(`Failed to load texture "${url}": ${err?.message ?? err}`))
       );
     });
   }
 
-  /** Dispose cached GPU resources. */
-  dispose() {
-    for (const asset of this._cache.values()) {
-      if (asset && typeof asset.dispose === 'function') {
-        asset.dispose();
-      }
+  /**
+   * Load a GLB/GLTF model, caching the parsed GLTF by URL.
+   *
+   * Returns the cached GLTF; callers typically use `gltf.scene.clone(true)` so
+   * each placement is independent. Errors reject with the URL for context.
+   *
+   * @param {string} url
+   * @returns {Promise<import('three/examples/jsm/loaders/GLTFLoader.js').GLTF>}
+   */
+  loadModel(url) {
+    if (this._modelCache.has(url)) {
+      return Promise.resolve(this._modelCache.get(url));
     }
-    this._cache.clear();
+    return new Promise((resolve, reject) => {
+      this.gltfLoader.load(
+        url,
+        (gltf) => {
+          this._modelCache.set(url, gltf);
+          resolve(gltf);
+        },
+        undefined,
+        (err) =>
+          reject(new Error(`Failed to load model "${url}": ${err?.message ?? err}`))
+      );
+    });
+  }
+
+  /** @returns {number} number of cached assets (textures + models). */
+  getLoadedCount() {
+    return this._textureCache.size + this._modelCache.size;
+  }
+
+  /**
+   * Dispose ALL cached GPU resources. Call only on full teardown, never on a
+   * per-map unload (maps must not dispose the shared cache).
+   */
+  dispose() {
+    for (const texture of this._textureCache.values()) {
+      texture.dispose?.();
+    }
+    this._textureCache.clear();
+
+    for (const gltf of this._modelCache.values()) {
+      gltf.scene?.traverse((obj) => {
+        obj.geometry?.dispose?.();
+        const mat = obj.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose?.());
+        else mat?.dispose?.();
+      });
+    }
+    this._modelCache.clear();
   }
 }

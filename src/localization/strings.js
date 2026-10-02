@@ -23,6 +23,8 @@ export const STRINGS = {
       camera: 'Máy quay',
       stateIdle: 'Đứng yên',
       stateMoving: 'Di chuyển',
+      assets: 'Tài nguyên',
+      colliders: 'Vật cản',
     },
     language: {
       vi: 'Tiếng Việt',
@@ -53,6 +55,8 @@ export const STRINGS = {
       camera: 'Camera',
       stateIdle: 'Idle',
       stateMoving: 'Moving',
+      assets: 'Assets',
+      colliders: 'Colliders',
     },
     language: {
       vi: 'Vietnamese',

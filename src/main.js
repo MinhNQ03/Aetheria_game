@@ -10,7 +10,10 @@ if (!(canvas instanceof HTMLCanvasElement)) {
 }
 
 const game = new Game(canvas);
-game.start();
+game.start().catch((err) => {
+  // Surface startup/asset failures instead of a silent blank canvas.
+  console.error('Game failed to start:', err);
+});
 
 // Press "L" to toggle UI language at runtime (vi <-> en).
 // This proves the localization layer updates live; later it moves into a menu.

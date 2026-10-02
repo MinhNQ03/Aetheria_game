@@ -55,8 +55,9 @@ export class MovementController {
    * @param {import('../input/InputManager.js').InputManager} ctx.input
    * @param {number} ctx.cameraYaw yaw (radians) the camera is looking along
    * @param {{ getGroundHeight(x: number, z: number): number }} [ctx.world]
+   * @param {{ resolve(pos: {x,z}, radius: number): void }} [ctx.collision]
    */
-  update(deltaTime, { input, cameraYaw, world }) {
+  update(deltaTime, { input, cameraYaw, world, collision }) {
     // 1) Raw intent on the XZ plane from logical actions (local space).
     //    forward = -Z, right = +X (screen-space convention).
     let ix = 0;
@@ -107,10 +108,15 @@ export class MovementController {
     this.position.x += this.velocity.x * deltaTime;
     this.position.z += this.velocity.z * deltaTime;
 
-    // 5) Ground constraint (flat for now; World owns the real height).
+    // 5) Static collision + world boundary (pushes position out of blockers).
+    if (collision) {
+      collision.resolve(this.position, this._config.radius);
+    }
+
+    // 6) Ground constraint (flat for now; World owns the real height).
     this.position.y = world ? world.getGroundHeight(this.position.x, this.position.z) : 0;
 
-    // 6) Facing: turn smoothly toward travel direction while moving.
+    // 7) Facing: turn smoothly toward travel direction while moving.
     const speed = this.getSpeed();
     if (speed > this._config.idleThreshold) {
       const targetAngle = Math.atan2(this.velocity.x, this.velocity.z);
@@ -121,11 +127,26 @@ export class MovementController {
       );
     }
 
-    // 7) State.
+    // 8) State.
     this.state =
       speed > this._config.idleThreshold
         ? MOVEMENT_STATES.MOVING
         : MOVEMENT_STATES.IDLE;
+  }
+
+  /**
+   * Teleport to a position and face an angle (used for map spawn). Resets
+   * velocity so there's no residual drift after spawning.
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   * @param {number} [facing] yaw radians
+   */
+  setPosition(x, y, z, facing = this.facing) {
+    this.position.set(x, y, z);
+    this.velocity.set(0, 0, 0);
+    this.facing = facing;
+    this.state = MOVEMENT_STATES.IDLE;
   }
 
   /** Smoothly rotate `current` toward `target` by up to `t` (0..1) of the gap. */

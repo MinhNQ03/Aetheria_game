@@ -4,11 +4,12 @@ Một game 3D fantasy action RPG nhỏ chạy trực tiếp trên trình duyệt
 low-poly / stylized, camera góc nhìn thứ ba. Xây bằng **JavaScript + Vite +
 Three.js**, deploy dạng static website (GitHub Pages, itch.io).
 
-> Trạng thái: **STEP 2 — Player 3D + Movement + Camera.** Có khung kiến trúc,
-> world thử nghiệm, player placeholder (logic tách khỏi visual) di chuyển
-> camera-relative với tăng/giảm tốc và xoay mượt, camera third-person orbit
-> bằng chuột, localization vi/en và debug overlay mở rộng. Chưa có combat, quái,
-> NPC, quest, âm thanh, nhiều map... (xem lộ trình).
+> Trạng thái: **STEP 3 — World/Map + Asset + Collision.** Có kiến trúc map
+> (định nghĩa bằng dữ liệu), MapManager load/unload, TestWorld với cây/đá/thùng/
+> tường low-poly, player spawn từ map, world boundary, va chạm tĩnh (player
+> không xuyên vật cản), AssetLoader hỗ trợ GLB/GLTF (pipeline sẵn sàng, chưa
+> dùng asset ngoài). Kế thừa player 3D + camera orbit từ STEP 2. Chưa có combat,
+> quái, NPC, quest, âm thanh, chuyển map... (xem lộ trình).
 
 ## Yêu cầu
 
@@ -42,7 +43,11 @@ src/
   camera/
     CameraController.js     # camera góc nhìn thứ ba, follow target
   world/
-    World.js                # scene thử nghiệm: sky, ground, light, placeholder
+    World.js                # một map đã load: scene, environment, objects, collision
+    MapManager.js           # registry map + load/unload/current (async-ready)
+    CollisionSystem.js      # va chạm tĩnh (AABB/circle) + world boundary
+    maps/
+      TestWorld.js          # định nghĩa map dạng dữ liệu (spawn/bounds/objects)
   player/
     Player.js               # facade mỏng: ghép model + movement
     PlayerModel.js          # visual (capsule placeholder; thay GLB sau này)

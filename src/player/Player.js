@@ -49,15 +49,26 @@ export class Player {
   }
 
   /**
+   * Place the player at a map spawn point and sync the visual immediately.
+   * @param {{x:number,y:number,z:number,rotation?:number}} spawn
+   */
+  setSpawn(spawn) {
+    this._movement.setPosition(spawn.x, spawn.y, spawn.z, spawn.rotation ?? 0);
+    this._object3D.position.set(spawn.x, spawn.y, spawn.z);
+    this._model.setFacingAngle(this._movement.facing);
+  }
+
+  /**
    * Advance the player by one frame.
    * @param {number} deltaTime seconds
    * @param {object} ctx
    * @param {import('../input/InputManager.js').InputManager} ctx.input
    * @param {number} ctx.cameraYaw yaw the camera looks along (radians)
    * @param {{ getGroundHeight(x: number, z: number): number }} [ctx.world]
+   * @param {{ resolve(pos: {x,z}, radius: number): void }} [ctx.collision]
    */
-  update(deltaTime, { input, cameraYaw, world }) {
-    this._movement.update(deltaTime, { input, cameraYaw, world });
+  update(deltaTime, { input, cameraYaw, world, collision }) {
+    this._movement.update(deltaTime, { input, cameraYaw, world, collision });
 
     // Apply movement results to the visual.
     const p = this._movement.position;

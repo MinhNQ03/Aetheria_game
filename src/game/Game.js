@@ -6,7 +6,8 @@ import { GameLoop } from './GameLoop.js';
 import { Localization } from '../localization/Localization.js';
 import { InputManager } from '../input/InputManager.js';
 import { CameraController } from '../camera/CameraController.js';
-import { World } from '../world/World.js';
+import { AssetLoader } from '../utils/AssetLoader.js';
+import { MapManager } from '../world/MapManager.js';
 import { Player } from '../player/Player.js';
 import { DebugOverlay } from '../ui/DebugOverlay.js';
 
@@ -14,11 +15,11 @@ import { DebugOverlay } from '../ui/DebugOverlay.js';
  * Top-level orchestrator.
  *
  * Owns the renderer, clock, and the lifetimes of every subsystem (state,
- * localization, input, world, player, camera, loop, debug UI). It wires them
- * together and exposes update()/render() to the GameLoop.
+ * localization, input, assets, maps, player, camera, loop, debug UI), wires
+ * them together, and exposes update()/render() to the GameLoop.
  *
- * Game deliberately holds no gameplay rules itself. As systems grow, they are
- * added as fields here and ticked inside update(), keeping GameLoop untouched.
+ * The live map is owned by MapManager; Game reads `mapManager.current` to get
+ * the active World (scene, collision, spawn). Game holds no gameplay rules.
  */
 export class Game {
   /** @param {HTMLCanvasElement} canvas */
@@ -39,7 +40,8 @@ export class Game {
     this.state = new GameState();
     this.localization = new Localization(this.state.language);
     this.input = new InputManager();
-    this.world = new World(this.state.currentMap);
+    this.assets = new AssetLoader();
+    this.maps = new MapManager(this.assets);
     this.player = new Player();
     this.camera = new CameraController(this._aspect());
     this.debug = new DebugOverlay(this.localization);
@@ -53,11 +55,18 @@ export class Game {
     this._onResize = this._onResize.bind(this);
   }
 
-  /** Wire everything up and start the loop. */
-  start() {
-    // Place the player into the world and follow it.
-    this.world.scene.add(this.player.getObject3D());
-    this.camera.setTarget(this.player.getObject3D());
+  /** @returns {import('../world/World.js').World | null} the live map. */
+  get world() {
+    return this.maps.current;
+  }
+
+  /**
+   * Load the starting map, wire everything up, and start the loop.
+   * Async because a map may await assets before it's ready.
+   * @returns {Promise<void>}
+   */
+  async start() {
+    await this.loadMap(this.state.currentMap);
 
     this.input.attach();
     this.input.attachPointer(this._canvas); // mouse-drag camera orbit
@@ -70,11 +79,31 @@ export class Game {
   }
 
   /**
+   * Load (or switch to) a map by id, then place the player at its spawn and
+   * rebind the camera to the player. Safe to call again for map transitions.
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async loadMap(id) {
+    const world = await this.maps.loadMap(id);
+    this.state.currentMap = world.name;
+
+    // Put the player into the new scene at the map's spawn point.
+    world.scene.add(this.player.getObject3D());
+    this.player.setSpawn(world.getSpawn());
+
+    // (Re)bind the camera to the current player root.
+    this.camera.setTarget(this.player.getObject3D());
+  }
+
+  /**
    * Advance all systems by deltaTime.
-   * New systems (enemies, physics, animation) hook in here.
    * @param {number} deltaTime seconds.
    */
   update(deltaTime) {
+    const world = this.world;
+    if (!world) return; // nothing to update until a map is ready
+
     // Feed accumulated mouse-drag into the camera orbit first, so movement
     // this frame is relative to the up-to-date camera yaw.
     const { dx, dy } = this.input.consumePointerDelta();
@@ -83,7 +112,8 @@ export class Game {
     this.player.update(deltaTime, {
       input: this.input,
       cameraYaw: this.camera.getYaw(),
-      world: this.world,
+      world,
+      collision: world.getCollision(),
     });
     this.camera.update(deltaTime);
 
@@ -101,11 +131,15 @@ export class Game {
       movementState: this.player.getMovementState(),
       speed: this.player.getSpeed(),
       cameraPosition: this.camera.getPosition(),
+      assetCount: this.assets.getLoadedCount(),
+      colliderCount: world.getCollision().getColliderCount(),
     });
   }
 
   render() {
-    this.renderer.render(this.world.scene, this.camera.camera);
+    const world = this.world;
+    if (!world) return;
+    this.renderer.render(world.scene, this.camera.camera);
   }
 
   /** Toggle UI language at runtime (vi <-> en). Useful for a settings menu. */
@@ -133,8 +167,9 @@ export class Game {
     this.debug.unmount();
     window.removeEventListener('resize', this._onResize);
 
-    this.world.dispose();
+    this.maps.unloadMap(); // disposes the live world
     this.player.dispose();
+    this.assets.dispose(); // dispose the shared cache on full teardown only
     this.renderer.dispose();
   }
 }
