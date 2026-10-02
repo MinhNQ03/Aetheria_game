@@ -154,18 +154,90 @@ async function main() {
     };
     await shoot('02-enemy-chase.png');
 
-    // --- Enemy death via DEV damage key (K). Guard has 30 HP, 10 per hit;
-    //     press K 4x to be safe, then verify alive count dropped. ---
-    const aliveBefore = parseInt1(await overlay(), ALIVE);
-    for (let i = 0; i < 4; i++) { await page.keyboard.press('KeyK'); await sleep(120); }
+    // --- COMBAT: teleport next to the distant idle guard (guard_02 at
+    //     (-28,0,-28)), face it (-Z, facing=PI), and swing. Verify real melee
+    //     damage via Enemy.takeDamage, one-hit-per-swing, cooldown, and death.
+    //     Uses the DEV hooks (dev build only). ---
+    const hasDevHooks = await page.evaluate(
+      () => typeof window.__game !== 'undefined'
+    );
+    report.tests.hasDevHooks = hasDevHooks;
+
+    if (!hasDevHooks) {
+      // Production build: no debug surface, so combat/boundary tests that rely
+      // on teleport/health-read are skipped. The load+render smoke test above
+      // (status 200, errors [], WebGL) still validates the production bundle.
+      report.tests.skippedDevTests = true;
+    } else {
+    const enemyHp = () =>
+      page.evaluate(() =>
+        window.__game && window.__game.devGetNearestEnemyHealth
+          ? window.__game.devGetNearestEnemyHealth()
+          : null
+      );
+    const faceEnemy = () =>
+      page.evaluate(() => window.__game.devSetPlayerPosition(-28, 0, -26, Math.PI));
+
+    await faceEnemy();
     await sleep(200);
-    const deathOverlay = await overlay();
-    report.tests.enemyDeath = {
-      aliveBefore,
-      aliveAfter: parseInt1(deathOverlay, ALIVE),
-      died: aliveBefore != null && parseInt1(deathOverlay, ALIVE) < aliveBefore,
+    const hpStart = await enemyHp(); // expect 30
+
+    // Case E: one swing deals exactly `damage` once (one-hit-per-swing).
+    await page.keyboard.press('Space');
+    // Read cooldown shortly after the swing starts: > 0 proves a cooldown is
+    // active and would gate a retap (deterministic, not a wall-clock race).
+    await sleep(120);
+    const cooldownNow = parseFloat(readLabel(await overlay(), 'Hồi chiêu'));
+    // Then wait comfortably past windup+active (even under a slow headless
+    // host, where clamped deltaTime stretches wall-clock) before reading HP.
+    await sleep(600);
+    const hpAfter1 = await enemyHp(); // expect 20 (one swing = 10)
+
+    report.tests.combatHit = {
+      hpStart: hpStart ? hpStart.current : null,
+      hpAfterOneSwing: hpAfter1 ? hpAfter1.current : null,
+      // exactly one swing's damage (10) applied — proves one-hit-per-swing
+      oneSwingDamage:
+        hpStart && hpAfter1 ? hpStart.current - hpAfter1.current : null,
+      // cooldown is counting down after the swing (gates the next request)
+      cooldownActive: Number.isFinite(cooldownNow) ? cooldownNow > 0 : null,
     };
-    await shoot('03-enemy-death.png');
+    await shoot('03-combat-hit.png');
+
+    // Kill the guard with repeated swings (spaced past cooldown) and confirm it
+    // dies and is removed. 30 HP / 10 => 3 hits; a few extra to be safe.
+    const aliveBeforeKill = parseInt1(await overlay(), ALIVE);
+    for (let i = 0; i < 4; i++) {
+      await faceEnemy();
+      await page.keyboard.press('Space');
+      await sleep(600); // > cooldown so each swing counts
+    }
+    await sleep(400);
+    const killOverlay = await overlay();
+    report.tests.combatDeath = {
+      aliveBefore: aliveBeforeKill,
+      aliveAfter: parseInt1(killOverlay, ALIVE),
+      died:
+        aliveBeforeKill != null &&
+        parseInt1(killOverlay, ALIVE) < aliveBeforeKill,
+    };
+
+    // Case B: miss when out of range. Teleport far from any enemy and swing;
+    // nearest enemy HP must not change.
+    await page.evaluate(() => window.__game.devSetPlayerPosition(0, 0, 40, 0));
+    await sleep(150);
+    const hpBeforeMiss = await enemyHp();
+    await page.keyboard.press('Space');
+    await sleep(400);
+    const hpAfterMiss = await enemyHp();
+    report.tests.combatMiss = {
+      hpBefore: hpBeforeMiss ? hpBeforeMiss.current : null,
+      hpAfter: hpAfterMiss ? hpAfterMiss.current : null,
+      missed:
+        hpBeforeMiss && hpAfterMiss
+          ? hpBeforeMiss.current === hpAfterMiss.current
+          : null,
+    };
 
     // --- Movement sanity (no screenshot; overlay assertion only) ---
     report.tests.forward = await move(['KeyW'], 800);
@@ -214,8 +286,9 @@ async function main() {
       clamped: bx != null ? bx <= 48 && bx >= 47 : null,
     };
     await shoot('04-boundary.png');
+    } // end dev-hook-only tests
 
-    // --- Camera orbit via mouse drag ---
+    // --- Camera orbit via mouse drag (works in dev and production) ---
     const cx = VIEWPORT.width / 2;
     const cy = VIEWPORT.height / 2;
     const camBefore = parseVec(await overlay(), 'Máy quay');

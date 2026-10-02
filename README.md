@@ -4,14 +4,14 @@ Một game 3D fantasy action RPG nhỏ chạy trực tiếp trên trình duyệt
 low-poly / stylized, camera góc nhìn thứ ba. Xây bằng **JavaScript + Vite +
 Three.js**, deploy dạng static website (GitHub Pages, itch.io).
 
-> Trạng thái: **STEP 4 — Enemy + AI + HP/Death.** Có hệ enemy data-driven
-> (Enemy = model + AI + health), EnemyManager quản vòng đời (spawn/update/
-> remove/dispose), AI state machine idle/patrol/chase/dead với detection +
-> lose-target, enemy dùng chung CollisionSystem (không xuyên vật cản/biên),
-> HealthComponent (takeDamage/death một lần). Kế thừa world/map + collision
-> (STEP 3), player 3D + camera orbit (STEP 2). **Chưa có combat thật** — enemy
-> có máu và chết được (phím K dev-damage để test), nhưng player chưa tấn công.
-> Chưa có skill, NPC, quest, âm thanh, chuyển map... (xem lộ trình).
+> Trạng thái: **STEP 5 — Combat + Attack + Hit Detection.** Player có đòn đánh
+> cận chiến cơ bản: input edge-trigger (Space/J), state machine
+> windup/active/recovery + cooldown, hit detection hình quạt (tầm + góc) tách
+> riêng, one-hit-per-swing, damage đi qua `Enemy.takeDamage()` → HealthComponent
+> → chết → EnemyManager xoá. Có feedback (slash arc của player, flash khi quái
+> trúng đòn). Kế thừa enemy/AI/health (STEP 4), world/collision (STEP 3), player
+> + camera (STEP 2). **Chưa có** combo, skill, vũ khí, projectile, quái đánh
+> trả, boss... (xem lộ trình).
 
 ## Yêu cầu
 
@@ -31,8 +31,8 @@ npm run preview  # xem thử bản build
 
 - Di chuyển (camera-relative): `W A S D` hoặc các phím mũi tên
 - Xoay camera (orbit): kéo chuột
+- Tấn công cận chiến: `Space` hoặc `J`
 - Đổi ngôn ngữ UI (vi ⇄ en): `L`
-- (DEV) Gây sát thương quái gần nhất: `K` — chỉ để test HP/death, sẽ bỏ khi có combat
 
 ## Kiến trúc thư mục
 
@@ -60,6 +60,9 @@ src/
     EnemyModel.js           # visual enemy (placeholder; GLB-ready seam)
     EnemyAIController.js    # state machine idle/patrol/chase/dead
     EnemyManager.js         # vòng đời enemy: spawn/update/remove/dispose
+  combat/
+    CombatController.js     # logic đòn đánh: state/timing/cooldown, one-hit-per-swing
+    HitDetectionSystem.js   # phát hiện trúng hình quạt (tầm + góc) trên mặt XZ
   health/
     HealthComponent.js      # máu thuần logic: damage/heal/death (dùng chung)
   input/

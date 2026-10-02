@@ -130,4 +130,37 @@ export const INPUT_ACTIONS = Object.freeze({
   BACKWARD: 'backward',
   LEFT: 'left',
   RIGHT: 'right',
+  // Edge-triggered action (consumed once per press), not a held action.
+  ATTACK: 'attack',
+});
+
+/**
+ * Combat configuration. One entry per attack kind; STEP 5 ships a single basic
+ * melee swing. Values are the single source of truth — CombatController and
+ * HitDetectionSystem read them, never redefine them.
+ *
+ * The melee hit area is a forward sector on the XZ plane: a target is hit when
+ * it is within `range` (+ its own radius via `hitRadius` slack) AND within
+ * `halfAngle` of the player's facing. Timing is a windup → active → recovery
+ * sequence; damage can only land during the active window.
+ */
+export const COMBAT_CONFIG = Object.freeze({
+  basicAttack: Object.freeze({
+    damage: 10,
+    range: 2.2, // reach from the player's centre, world units
+    hitRadius: 1.0, // extra slack to account for target footprint
+    halfAngle: Math.PI * 0.3, // ~54° to each side of facing
+    windup: 0.1, // seconds before the active window
+    activeTime: 0.12, // seconds the hit window is open
+    recovery: 0.3, // seconds of recovery after active
+    cooldown: 0.5, // minimum seconds between swing starts
+  }),
+});
+
+/** Combat / attack lifecycle states (distinct from movement states). */
+export const COMBAT_STATES = Object.freeze({
+  IDLE: 'idle',
+  WINDUP: 'windup',
+  ACTIVE: 'active',
+  RECOVERY: 'recovery',
 });

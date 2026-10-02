@@ -10,6 +10,8 @@ import { AssetLoader } from '../utils/AssetLoader.js';
 import { MapManager } from '../world/MapManager.js';
 import { Player } from '../player/Player.js';
 import { EnemyManager } from '../enemy/EnemyManager.js';
+import { HitDetectionSystem } from '../combat/HitDetectionSystem.js';
+import { INPUT_ACTIONS } from '../utils/constants.js';
 import { DebugOverlay } from '../ui/DebugOverlay.js';
 
 /**
@@ -46,6 +48,9 @@ export class Game {
     this.player = new Player();
     /** @type {EnemyManager | null} created per map in loadMap(). */
     this.enemies = null;
+    this.hitDetection = new HitDetectionSystem();
+    // Cached provider of alive targets, bound once (no per-frame closure alloc).
+    this._getTargets = () => (this.enemies ? this.enemies.getAliveEnemies() : []);
     this.camera = new CameraController(this._aspect());
     this.debug = new DebugOverlay(this.localization);
 
@@ -122,11 +127,19 @@ export class Game {
     const { dx, dy } = this.input.consumePointerDelta();
     this.camera.orbit(dx, dy);
 
+    // Edge-triggered attack: one request per key press.
+    if (this.input.consumePressed(INPUT_ACTIONS.ATTACK)) {
+      this.player.requestAttack();
+    }
+
+    // Player movement + combat (combat resolves hits against alive enemies).
     this.player.update(deltaTime, {
       input: this.input,
       cameraYaw: this.camera.getYaw(),
       world,
       collision: world.getCollision(),
+      hitDetection: this.hitDetection,
+      getTargets: this._getTargets,
     });
 
     // Enemies update after the player (they chase the player's new position),
@@ -161,22 +174,10 @@ export class Game {
       enemyCount: this.enemies ? this.enemies.getEnemies().length : 0,
       aliveEnemies: this.enemies ? this.enemies.getAliveCount() : 0,
       nearestEnemyState: nearest ? nearest.getState() : null,
+      combatState: this.player.getCombatState(),
+      cooldownRemaining: this.player.getCooldownRemaining(),
+      lastHitCount: this.player.getLastAttackHitCount(),
     });
-  }
-
-  /**
-   * DEV-ONLY: damage the nearest alive enemy. Wired to a key in main.js so
-   * health/death can be exercised without a combat system. Not used by any
-   * gameplay path.
-   * @param {number} [amount]
-   * @returns {boolean} whether an enemy was hit
-   */
-  devDamageNearestEnemy(amount = 10) {
-    if (!this.enemies) return false;
-    const target = this.enemies.getNearestAlive(this.player.getPosition());
-    if (!target) return false;
-    target.takeDamage(amount);
-    return true;
   }
 
   /**
@@ -191,6 +192,19 @@ export class Game {
    */
   devSetPlayerPosition(x, y, z, rotation = 0) {
     this.player.setSpawn({ x, y, z, rotation });
+  }
+
+  /**
+   * DEV-ONLY: read the nearest alive enemy's health (used by automated capture
+   * to verify combat damage / one-hit-per-swing). Returns null if none.
+   * @returns {{ current:number, max:number, state:string }|null}
+   */
+  devGetNearestEnemyHealth() {
+    if (!this.enemies) return null;
+    const e = this.enemies.getNearestAlive(this.player.getPosition());
+    if (!e) return null;
+    const h = e.getHealth();
+    return { current: h.getCurrent(), max: h.getMax(), state: e.getState() };
   }
 
   render() {

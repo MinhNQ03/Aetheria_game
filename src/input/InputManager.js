@@ -13,7 +13,15 @@ const DEFAULT_KEY_MAP = {
   ArrowLeft: INPUT_ACTIONS.LEFT,
   KeyD: INPUT_ACTIONS.RIGHT,
   ArrowRight: INPUT_ACTIONS.RIGHT,
+  Space: INPUT_ACTIONS.ATTACK,
+  KeyJ: INPUT_ACTIONS.ATTACK,
 };
+
+/**
+ * Actions that are edge-triggered (consumed once per physical press) rather
+ * than reported as "held". Holding the key does NOT re-fire them each frame.
+ */
+const EDGE_ACTIONS = new Set([INPUT_ACTIONS.ATTACK]);
 
 /**
  * Keyboard + mouse input, exposed as logical actions and consumable deltas so
@@ -41,8 +49,10 @@ export class InputManager {
   constructor(keyMap = DEFAULT_KEY_MAP, target = window) {
     this._keyMap = keyMap;
     this._target = target;
-    /** @type {Set<string>} currently active logical actions. */
+    /** @type {Set<string>} currently active (held) logical actions. */
     this._active = new Set();
+    /** @type {Set<string>} edge-triggered actions pressed since last consume. */
+    this._justPressed = new Set();
     this._attached = false;
 
     // Pointer (mouse) orbit state.
@@ -95,6 +105,7 @@ export class InputManager {
       this._target.removeEventListener('keyup', this._onKeyUp);
       this._target.removeEventListener('blur', this._onBlur);
       this._active.clear();
+      this._justPressed.clear();
       this._attached = false;
     }
     if (this._pointerAttached) {
@@ -112,11 +123,26 @@ export class InputManager {
   }
 
   /**
-   * @param {string} action one of INPUT_ACTIONS.
+   * @param {string} action one of INPUT_ACTIONS (held actions only).
    * @returns {boolean} whether the action is currently held.
    */
   isPressed(action) {
     return this._active.has(action);
+  }
+
+  /**
+   * Edge-triggered read: returns true at most once per physical key press and
+   * clears the flag, so a single press maps to a single action (no per-frame
+   * spam while held). Use for ATTACK and similar discrete inputs.
+   * @param {string} action
+   * @returns {boolean}
+   */
+  consumePressed(action) {
+    if (this._justPressed.has(action)) {
+      this._justPressed.delete(action);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -133,22 +159,28 @@ export class InputManager {
 
   _onKeyDown(event) {
     const action = this._keyMap[event.code];
-    if (action) {
+    if (!action) return;
+    // Prevent default (arrow-key scroll, Space page-scroll).
+    event.preventDefault();
+
+    if (EDGE_ACTIONS.has(action)) {
+      // Ignore OS auto-repeat; only the initial press counts as an edge.
+      if (!event.repeat) this._justPressed.add(action);
+    } else {
       this._active.add(action);
-      // Prevent arrow keys from scrolling the page.
-      event.preventDefault();
     }
   }
 
   _onKeyUp(event) {
     const action = this._keyMap[event.code];
-    if (action) {
+    if (action && !EDGE_ACTIONS.has(action)) {
       this._active.delete(action);
     }
   }
 
   _onBlur() {
     this._active.clear();
+    this._justPressed.clear();
     this._dragging = false;
   }
 

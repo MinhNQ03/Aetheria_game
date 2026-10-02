@@ -3,8 +3,12 @@ import {
   Mesh,
   CapsuleGeometry,
   ConeGeometry,
+  RingGeometry,
+  MeshBasicMaterial,
   MeshStandardMaterial,
+  DoubleSide,
 } from 'three';
+import { COMBAT_CONFIG, COMBAT_STATES } from '../utils/constants.js';
 
 /**
  * The player's VISUAL representation, isolated from movement logic.
@@ -42,6 +46,31 @@ export class PlayerModel {
     nose.position.set(0, 1, 0.55);
     this.root.add(nose);
     this._track(noseGeo, noseMat);
+
+    // --- Attack feedback: a flat slash arc in front of the player, matching
+    // the gameplay hit sector (range + halfAngle). Hidden except during the
+    // ACTIVE combat window. This is purely visual; gameplay hit detection is
+    // computed separately in HitDetectionSystem.
+    const atk = COMBAT_CONFIG.basicAttack;
+    const arcGeo = new RingGeometry(0.6, atk.range, 24, 1, -atk.halfAngle, atk.halfAngle * 2);
+    this._arcMat = new MeshBasicMaterial({
+      color: 0xffe08a,
+      transparent: true,
+      opacity: 0.0,
+      side: DoubleSide,
+      depthWrite: false,
+    });
+    this._slash = new Mesh(arcGeo, this._arcMat);
+    // Lay flat on the ground, open toward +Z (model forward). RingGeometry is
+    // built in the XY plane around +X at angle 0; rotate so angle 0 -> +Z and
+    // the ring lies on the XZ plane.
+    this._slash.rotation.x = -Math.PI / 2;
+    this._slash.rotation.z = Math.PI / 2;
+    this._slash.position.y = 0.1;
+    this._slash.visible = false;
+    this.root.add(this._slash);
+    this._track(arcGeo);
+    this._track(this._arcMat);
   }
 
   /** @returns {import('three').Group} the visual root to add to the scene. */
@@ -55,6 +84,18 @@ export class PlayerModel {
    */
   setFacingAngle(angle) {
     this.root.rotation.y = angle;
+  }
+
+  /**
+   * Reflect the current combat state in the attack-feedback visual. The slash
+   * arc is shown only during the ACTIVE window. Combat logic never touches the
+   * mesh/material — it only passes a state string here.
+   * @param {string} combatState one of COMBAT_STATES
+   */
+  setCombatState(combatState) {
+    const active = combatState === COMBAT_STATES.ACTIVE;
+    this._slash.visible = active;
+    this._arcMat.opacity = active ? 0.5 : 0.0;
   }
 
   /**

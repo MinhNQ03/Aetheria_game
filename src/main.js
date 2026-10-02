@@ -22,16 +22,12 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
-// DEV-ONLY surface. Vite statically replaces import.meta.env.DEV, so this whole
-// block (the "K" debug-damage handler and the window.__game reference) is
-// dropped from the production bundle — no debug behaviour ships.
+// DEV-ONLY surface. Vite statically replaces import.meta.env.DEV, so this block
+// is dropped from the production bundle — no debug behaviour ships. Exposes the
+// game to automated capture (boundary teleport). The old "K" debug-damage key
+// is gone now that real combat exists (STEP 5).
 if (import.meta.env.DEV) {
   window.__game = game;
-  window.addEventListener('keydown', (event) => {
-    if (event.code === 'KeyK') {
-      game.devDamageNearestEnemy();
-    }
-  });
 }
 
 // Clean up GPU/DOM resources on page unload.

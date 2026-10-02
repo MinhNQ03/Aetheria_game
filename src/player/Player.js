@@ -1,51 +1,69 @@
 import { PlayerModel } from './PlayerModel.js';
 import { MovementController } from './MovementController.js';
+import { CombatController } from '../combat/CombatController.js';
 
 /**
- * The player entity — a thin facade over two collaborators:
+ * The player entity — a thin facade over three collaborators:
  *
  *   Player
  *    ├── MovementController   (logic: position, velocity, state, facing)
+ *    ├── CombatController     (logic: attack state/timing, damage)
  *    └── PlayerModel          (visual: meshes now, GLB + animation later)
  *
- * Game only talks to Player (getObject3D/getPosition/getVelocity/
- * getMovementState and update). Combat, skills, animation, etc. attach to the
- * movement controller or the model without turning this class into a monolith.
+ * Game only talks to Player. Combat is requested via requestAttack() and
+ * advanced inside update() using the player's current position + facing, so
+ * attacks are camera-independent (facing comes from movement, not the camera).
  *
- * No combat, HP, skills, or animation yet.
+ * No HP for the player yet (STEP 5 is player → enemy only), no skills, no combo.
  */
 export class Player {
   constructor() {
     this._model = new PlayerModel();
     this._movement = new MovementController();
+    this._combat = new CombatController();
 
-    // Root the model represents the player in the scene.
     this._object3D = this._model.getObject3D();
   }
 
-  /** @returns {import('three').Object3D} root to add to the scene. */
   getObject3D() {
     return this._object3D;
   }
 
-  /** @returns {import('three').Vector3} live world position (feet). */
   getPosition() {
     return this._movement.position;
   }
 
-  /** @returns {import('three').Vector3} live horizontal velocity. */
   getVelocity() {
     return this._movement.velocity;
   }
 
-  /** @returns {number} current horizontal speed. */
   getSpeed() {
     return this._movement.getSpeed();
   }
 
-  /** @returns {string} current movement state (see MOVEMENT_STATES). */
+  /** @returns {string} movement state (see MOVEMENT_STATES). */
   getMovementState() {
     return this._movement.state;
+  }
+
+  /** @returns {string} combat state (see COMBAT_STATES). */
+  getCombatState() {
+    return this._combat.getState();
+  }
+
+  /** @returns {number} seconds until another swing can start. */
+  getCooldownRemaining() {
+    return this._combat.getCooldownRemaining();
+  }
+
+  /** @returns {number} targets hit by the current/most-recent swing. */
+  getLastAttackHitCount() {
+    return this._combat.getLastAttackHitCount();
+  }
+
+  /** Edge-triggered: request a melee swing (honored only when free). */
+  requestAttack() {
+    this._combat.requestAttack();
   }
 
   /**
@@ -59,21 +77,36 @@ export class Player {
   }
 
   /**
-   * Advance the player by one frame.
+   * Advance the player by one frame: movement, then combat (using the facing
+   * movement just produced), then visual sync.
    * @param {number} deltaTime seconds
    * @param {object} ctx
    * @param {import('../input/InputManager.js').InputManager} ctx.input
    * @param {number} ctx.cameraYaw yaw the camera looks along (radians)
-   * @param {{ getGroundHeight(x: number, z: number): number }} [ctx.world]
-   * @param {{ resolve(pos: {x,z}, radius: number): void }} [ctx.collision]
+   * @param {{ getGroundHeight(x,z): number }} [ctx.world]
+   * @param {{ resolve(pos:{x,z}, radius:number): void }} [ctx.collision]
+   * @param {{ query(q:object): Array }} [ctx.hitDetection]
+   * @param {() => Array} [ctx.getTargets] alive candidate targets provider
    */
-  update(deltaTime, { input, cameraYaw, world, collision }) {
+  update(deltaTime, { input, cameraYaw, world, collision, hitDetection, getTargets }) {
     this._movement.update(deltaTime, { input, cameraYaw, world, collision });
 
-    // Apply movement results to the visual.
+    // Combat uses the player's own facing (not the camera) so swings aim where
+    // the character is pointing.
+    if (hitDetection && getTargets) {
+      this._combat.update(deltaTime, {
+        position: this._movement.position,
+        facing: this._movement.facing,
+        hitDetection,
+        getTargets,
+      });
+    }
+
+    // Apply results to the visual.
     const p = this._movement.position;
     this._object3D.position.set(p.x, p.y, p.z);
     this._model.setFacingAngle(this._movement.facing);
+    this._model.setCombatState(this._combat.getState());
     this._model.update(deltaTime, {
       state: this._movement.state,
       speed: this._movement.getSpeed(),

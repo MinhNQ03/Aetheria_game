@@ -53,6 +53,9 @@ export class DebugOverlay {
       'enemies',
       'aliveEnemies',
       'enemyState',
+      'combat',
+      'cooldown',
+      'hits',
       'language',
     ]) {
       const row = document.createElement('div');
@@ -96,6 +99,9 @@ export class DebugOverlay {
    * @param {number} [data.enemyCount] total enemies.
    * @param {number} [data.aliveEnemies] alive enemies.
    * @param {string|null} [data.nearestEnemyState] nearest enemy AI state.
+   * @param {string} [data.combatState] player combat state.
+   * @param {number} [data.cooldownRemaining] combat cooldown seconds.
+   * @param {number} [data.lastHitCount] hits from the latest swing.
    */
   update({
     deltaTime,
@@ -110,6 +116,9 @@ export class DebugOverlay {
     enemyCount,
     aliveEnemies,
     nearestEnemyState,
+    combatState,
+    cooldownRemaining,
+    lastHitCount,
   }) {
     if (!this._el) return;
 
@@ -126,6 +135,9 @@ export class DebugOverlay {
     this._lastEnemyCount = enemyCount;
     this._lastAliveEnemies = aliveEnemies;
     this._lastNearestEnemyState = nearestEnemyState;
+    this._lastCombatState = combatState;
+    this._lastCooldown = cooldownRemaining;
+    this._lastHitCount = lastHitCount;
 
     this._renderValues();
   }
@@ -140,6 +152,17 @@ export class DebugOverlay {
       dead: 'debug.stateDead',
     };
     return this._loc.t(map[code] || 'debug.stateIdle');
+  }
+
+  /** Map a combat state code to its localized label. */
+  _combatLabel(code) {
+    const map = {
+      idle: 'debug.combatIdle',
+      windup: 'debug.combatWindup',
+      active: 'debug.combatActive',
+      recovery: 'debug.combatRecovery',
+    };
+    return this._loc.t(map[code] || 'debug.combatIdle');
   }
 
   _updateFps(deltaTime) {
@@ -213,6 +236,19 @@ export class DebugOverlay {
         ? this._stateLabel(this._lastNearestEnemyState)
         : '-';
       this._rows.enemyState.textContent = `${t('debug.enemyState')}: ${label}`;
+    }
+    if (this._rows.combat) {
+      this._rows.combat.textContent = `${t('debug.combat')}: ${this._combatLabel(
+        this._lastCombatState
+      )}`;
+    }
+    if (this._rows.cooldown) {
+      const cd = typeof this._lastCooldown === 'number' ? this._lastCooldown : 0;
+      this._rows.cooldown.textContent = `${t('debug.cooldown')}: ${fmt(cd)}`;
+    }
+    if (this._rows.hits) {
+      const h = this._lastHitCount ?? 0;
+      this._rows.hits.textContent = `${t('debug.hits')}: ${h}`;
     }
     if (this._rows.language) {
       const lang = this._lastLang || this._loc.language;

@@ -112,7 +112,13 @@ export class Enemy {
    */
   takeDamage(amount) {
     if (this._disposed) return 0;
-    return this.health.takeDamage(amount);
+    const applied = this.health.takeDamage(amount);
+    // Visual hit feedback only when damage actually landed and still alive.
+    // (Death visual is driven separately by the health death callback.)
+    if (applied > 0 && !this.health.isDead()) {
+      this._model.hit();
+    }
+    return applied;
   }
 
   /**

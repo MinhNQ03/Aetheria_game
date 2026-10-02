@@ -27,6 +27,10 @@ export class EnemyModel {
     this.root.add(body);
     this._track(bodyGeo);
 
+    // Hit-flash state: emissive briefly glows white on hit, then decays.
+    this._flash = 0; // 0..1
+    this._dead = false;
+
     // Forward marker so facing is visible on the placeholder.
     const noseGeo = new ConeGeometry(0.18, 0.4, 12);
     this._noseMat = new MeshStandardMaterial({ color: 0x2c2c2c });
@@ -54,6 +58,9 @@ export class EnemyModel {
    * play a death animation here instead.
    */
   setDead() {
+    this._dead = true;
+    this._flash = 0;
+    this._bodyMat.emissive?.setRGB(0, 0, 0);
     this._bodyMat.color.set(0x4a4a4a);
     this._bodyMat.transparent = true;
     this._bodyMat.opacity = 0.5;
@@ -61,13 +68,26 @@ export class EnemyModel {
   }
 
   /**
-   * Per-frame visual hook. No-op for the placeholder; a GLB version advances
-   * its AnimationMixer here from state/speed.
-   * @param {number} _deltaTime
+   * Trigger a brief hit flash. Combat calls this on damage; the model owns the
+   * visual (combat never touches materials). No-op once dead.
+   */
+  hit() {
+    if (this._dead) return;
+    this._flash = 1;
+  }
+
+  /**
+   * Per-frame visual hook. Decays the hit flash. A GLB version would also
+   * advance its AnimationMixer here from state/speed.
+   * @param {number} deltaTime
    * @param {{ state: string, speed: number }} _motion
    */
-  update(_deltaTime, _motion) {
-    // Intentionally empty until an animated model is attached.
+  update(deltaTime, _motion) {
+    if (this._flash > 0 && !this._dead) {
+      this._flash = Math.max(0, this._flash - deltaTime * 6); // ~0.17s decay
+      const e = this._bodyMat.emissive;
+      if (e) e.setRGB(this._flash, this._flash, this._flash);
+    }
   }
 
   _track(...resources) {
