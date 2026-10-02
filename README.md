@@ -4,12 +4,14 @@ Một game 3D fantasy action RPG nhỏ chạy trực tiếp trên trình duyệt
 low-poly / stylized, camera góc nhìn thứ ba. Xây bằng **JavaScript + Vite +
 Three.js**, deploy dạng static website (GitHub Pages, itch.io).
 
-> Trạng thái: **STEP 3 — World/Map + Asset + Collision.** Có kiến trúc map
-> (định nghĩa bằng dữ liệu), MapManager load/unload, TestWorld với cây/đá/thùng/
-> tường low-poly, player spawn từ map, world boundary, va chạm tĩnh (player
-> không xuyên vật cản), AssetLoader hỗ trợ GLB/GLTF (pipeline sẵn sàng, chưa
-> dùng asset ngoài). Kế thừa player 3D + camera orbit từ STEP 2. Chưa có combat,
-> quái, NPC, quest, âm thanh, chuyển map... (xem lộ trình).
+> Trạng thái: **STEP 4 — Enemy + AI + HP/Death.** Có hệ enemy data-driven
+> (Enemy = model + AI + health), EnemyManager quản vòng đời (spawn/update/
+> remove/dispose), AI state machine idle/patrol/chase/dead với detection +
+> lose-target, enemy dùng chung CollisionSystem (không xuyên vật cản/biên),
+> HealthComponent (takeDamage/death một lần). Kế thừa world/map + collision
+> (STEP 3), player 3D + camera orbit (STEP 2). **Chưa có combat thật** — enemy
+> có máu và chết được (phím K dev-damage để test), nhưng player chưa tấn công.
+> Chưa có skill, NPC, quest, âm thanh, chuyển map... (xem lộ trình).
 
 ## Yêu cầu
 
@@ -30,6 +32,7 @@ npm run preview  # xem thử bản build
 - Di chuyển (camera-relative): `W A S D` hoặc các phím mũi tên
 - Xoay camera (orbit): kéo chuột
 - Đổi ngôn ngữ UI (vi ⇄ en): `L`
+- (DEV) Gây sát thương quái gần nhất: `K` — chỉ để test HP/death, sẽ bỏ khi có combat
 
 ## Kiến trúc thư mục
 
@@ -52,6 +55,13 @@ src/
     Player.js               # facade mỏng: ghép model + movement
     PlayerModel.js          # visual (capsule placeholder; thay GLB sau này)
     MovementController.js   # logic di chuyển camera-relative + state
+  enemy/
+    Enemy.js                # facade: ghép model + AI + health
+    EnemyModel.js           # visual enemy (placeholder; GLB-ready seam)
+    EnemyAIController.js    # state machine idle/patrol/chase/dead
+    EnemyManager.js         # vòng đời enemy: spawn/update/remove/dispose
+  health/
+    HealthComponent.js      # máu thuần logic: damage/heal/death (dùng chung)
   input/
     InputManager.js         # map WASD/Arrow -> action logic (isPressed)
   localization/

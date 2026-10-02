@@ -72,6 +72,17 @@ async function main() {
 
   const PLAYER = 'Nhân vật';
   const COLLIDERS = 'Vật cản';
+  const ENEMIES = 'Quái';
+  const ALIVE = 'Còn sống';
+  const ENEMY_STATE = 'Trạng thái quái';
+
+  /** Read the text value after the first ':' of a labelled overlay line. */
+  const readLabel = (text, label) => {
+    const line = text.split('\n').find((l) => l.trim().startsWith(label));
+    if (!line) return null;
+    const i = line.indexOf(':');
+    return i === -1 ? null : line.slice(i + 1).trim();
+  };
 
   try {
     const resp = await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 20000 });
@@ -104,6 +115,14 @@ async function main() {
     report.tests.overlayStart = start;
     report.tests.spawn = parseVec(start, PLAYER);
     report.tests.colliderCount = parseInt1(start, COLLIDERS);
+    // Enemies at spawn: expect a count, all alive, nearest not chasing yet
+    // (player spawns at origin; the nearest guard sits ~8.5 units away > 10? no,
+    // ~8.49 < 10, so it may already chase — we assert count/alive, not state).
+    report.tests.enemyStart = {
+      count: parseInt1(start, ENEMIES),
+      alive: parseInt1(start, ALIVE),
+      nearestState: readLabel(start, ENEMY_STATE),
+    };
     await shoot('01-spawn.png');
 
     // Hold keys for `ms`; return before/after player position + distance.
@@ -119,37 +138,54 @@ async function main() {
       return { before, after, dist };
     };
 
-    // --- Movement sanity (also used by STEP 2 criteria) ---
-    report.tests.forward = await move(['KeyW'], 800);
-    await shoot('02-forward.png');
+    // --- Enemy chase: stand still ~1.2s; the near guard (within detection
+    //     radius) should chase, so nearest-enemy state becomes "chase". ---
+    await sleep(1200);
+    const chaseOverlay = await overlay();
+    report.tests.enemyChase = {
+      nearestState: readLabel(chaseOverlay, ENEMY_STATE),
+      alive: parseInt1(chaseOverlay, ALIVE),
+    };
+    await shoot('02-enemy-chase.png');
 
-    // --- Collision: crates sit near (3..5, 5..7). Spawn is origin; walk +X,+Z
-    //     into them and confirm we don't end up inside the cluster. ---
-    // First return toward origin area.
+    // --- Enemy death via DEV damage key (K). Guard has 30 HP, 10 per hit;
+    //     press K 4x to be safe, then verify alive count dropped. ---
+    const aliveBefore = parseInt1(await overlay(), ALIVE);
+    for (let i = 0; i < 4; i++) { await page.keyboard.press('KeyK'); await sleep(120); }
+    await sleep(200);
+    const deathOverlay = await overlay();
+    report.tests.enemyDeath = {
+      aliveBefore,
+      aliveAfter: parseInt1(deathOverlay, ALIVE),
+      died: aliveBefore != null && parseInt1(deathOverlay, ALIVE) < aliveBefore,
+    };
+    await shoot('03-enemy-death.png');
+
+    // --- Movement sanity (no screenshot; overlay assertion only) ---
+    report.tests.forward = await move(['KeyW'], 800);
+
+    // --- Collision: push +X,+Z toward the crate cluster (centres ~3..5,5..7).
+    //     Assert the player ends up outside the cluster interior. ---
     await move(['KeyS'], 400);
-    const col = await move(['KeyW', 'KeyD'], 1500); // push toward crate cluster
-    // After pushing into crates, player should be stopped outside them, i.e.
-    // not sitting at the crate centres (~4,6). We assert it didn't pass far
-    // beyond the near face. This is a soft check; exact value depends on angle.
+    const col = await move(['KeyW', 'KeyD'], 1500);
     report.tests.collision = {
       end: col.after,
-      // crates occupy roughly x in [2.25,5], z in [4.25,8]; player radius 0.5.
-      // "blocked" = player not INSIDE the cluster interior.
       blocked: col.after
         ? !(col.after.x > 2.8 && col.after.x < 4.7 &&
             col.after.z > 4.8 && col.after.z < 7.2)
         : null,
     };
-    await shoot('03-collision.png');
 
-    // --- World boundary: bounds are +/-48 with radius 0.5 => |coord| <= 47.5.
-    //     Walk a long time toward +X and confirm clamp. ---
-    const far = await move(['KeyD'], 4000);
+    // --- World boundary: bounds +/-48, radius 0.5 => clamp at ~47.5.
+    //     Walk +X long enough to actually reach the edge from wherever the
+    //     player currently is (max span ~96 units at 6 u/s ≈ 16s; 9s is plenty
+    //     from the mid-field position after the collision test). ---
+    const far = await move(['KeyD'], 9000);
     const bx = far.after ? far.after.x : null;
     report.tests.boundary = {
       end: far.after,
-      // Should be clamped at ~47.5 (allow small tolerance), never beyond 48.
-      clamped: bx != null ? bx <= 48 && bx >= 46 : null,
+      // Clamped at ~47.5 and never beyond the hard max (48).
+      clamped: bx != null ? bx <= 48 && bx >= 47 : null,
     };
     await shoot('04-boundary.png');
 
@@ -169,13 +205,11 @@ async function main() {
         ? Math.hypot(camAfter.x - camBefore.x, camAfter.z - camBefore.z) > 0.1
         : null,
     };
-    await shoot('05-camera.png');
 
-    // --- Language toggle ---
+    // --- Language toggle (no screenshot; overlay assertion only) ---
     await page.keyboard.press('KeyL');
     await sleep(300);
     report.tests.overlayEN = await overlay();
-    await shoot('06-language-en.png');
 
     // --- Resize ---
     await page.setViewportSize({ width: 900, height: 600 });
@@ -184,7 +218,7 @@ async function main() {
       const c = document.getElementById('game-canvas');
       return { width: c.width, height: c.height };
     });
-    await shoot('07-resized.png');
+    await shoot('05-resized.png');
   } catch (err) {
     report.fatal = String(err);
   } finally {

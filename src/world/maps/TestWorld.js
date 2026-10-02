@@ -68,6 +68,55 @@ export const TestWorld = {
     { type: 'path', position: [0, 0.02, 18], size: [4, 24], collider: null },
   ],
 
+  // Enemy spawns (data only — no Three.js objects here). EnemyManager reads
+  // these on map load. `behavior` overrides ENEMY_CONFIG per enemy.
+  enemies: [
+    // Guard near the player — close enough to test chase quickly.
+    {
+      id: 'guard_01',
+      type: 'basic',
+      position: [6, 0, 6],
+      rotation: 0,
+      behavior: { mode: 'guard' },
+    },
+    // Patroller walking a square route around the clearing.
+    {
+      id: 'patrol_01',
+      type: 'basic',
+      position: [-10, 0, 12],
+      behavior: {
+        mode: 'patrol',
+        patrol: [
+          [-10, 0, 12],
+          [-10, 0, 24],
+          [-20, 0, 24],
+          [-20, 0, 12],
+        ],
+      },
+    },
+    // Patroller on the far side — far enough to verify detection radius.
+    {
+      id: 'patrol_02',
+      type: 'basic',
+      position: [20, 0, -20],
+      behavior: {
+        mode: 'patrol',
+        patrol: [
+          [20, 0, -20],
+          [30, 0, -20],
+          [30, 0, -30],
+        ],
+      },
+    },
+    // Distant idle guard — stays idle while the player is far away.
+    {
+      id: 'guard_02',
+      type: 'basic',
+      position: [-28, 0, -28],
+      behavior: { mode: 'guard' },
+    },
+  ],
+
   // Named palette exposed so World can resolve object colors.
   colors: COLORS,
 };

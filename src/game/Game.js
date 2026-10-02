@@ -9,6 +9,7 @@ import { CameraController } from '../camera/CameraController.js';
 import { AssetLoader } from '../utils/AssetLoader.js';
 import { MapManager } from '../world/MapManager.js';
 import { Player } from '../player/Player.js';
+import { EnemyManager } from '../enemy/EnemyManager.js';
 import { DebugOverlay } from '../ui/DebugOverlay.js';
 
 /**
@@ -43,6 +44,8 @@ export class Game {
     this.assets = new AssetLoader();
     this.maps = new MapManager(this.assets);
     this.player = new Player();
+    /** @type {EnemyManager | null} created per map in loadMap(). */
+    this.enemies = null;
     this.camera = new CameraController(this._aspect());
     this.debug = new DebugOverlay(this.localization);
 
@@ -85,12 +88,22 @@ export class Game {
    * @returns {Promise<void>}
    */
   async loadMap(id) {
+    // Tear down the previous map's enemies before the old world is disposed.
+    if (this.enemies) {
+      this.enemies.dispose();
+      this.enemies = null;
+    }
+
     const world = await this.maps.loadMap(id);
     this.state.currentMap = world.name;
 
     // Put the player into the new scene at the map's spawn point.
     world.scene.add(this.player.getObject3D());
     this.player.setSpawn(world.getSpawn());
+
+    // Spawn this map's enemies into the new scene (data-driven).
+    this.enemies = new EnemyManager(world.scene);
+    this.enemies.spawnFromDefinitions(world.getEnemyDefinitions());
 
     // (Re)bind the camera to the current player root.
     this.camera.setTarget(this.player.getObject3D());
@@ -115,6 +128,13 @@ export class Game {
       world,
       collision: world.getCollision(),
     });
+
+    // Enemies update after the player (they chase the player's new position),
+    // before the camera follows.
+    if (this.enemies) {
+      this.enemies.update(deltaTime, { target: this.player, world });
+    }
+
     this.camera.update(deltaTime);
 
     // Mirror the live player position into serializable state.
@@ -122,6 +142,11 @@ export class Game {
     this.state.player.position.x = p.x;
     this.state.player.position.y = p.y;
     this.state.player.position.z = p.z;
+
+    // Nearest-enemy state for the debug overlay (also handy for future lock-on).
+    const nearest = this.enemies
+      ? this.enemies.getNearestAlive(this.player.getPosition())
+      : null;
 
     this.debug.update({
       deltaTime,
@@ -133,7 +158,25 @@ export class Game {
       cameraPosition: this.camera.getPosition(),
       assetCount: this.assets.getLoadedCount(),
       colliderCount: world.getCollision().getColliderCount(),
+      enemyCount: this.enemies ? this.enemies.getEnemies().length : 0,
+      aliveEnemies: this.enemies ? this.enemies.getAliveCount() : 0,
+      nearestEnemyState: nearest ? nearest.getState() : null,
     });
+  }
+
+  /**
+   * DEV-ONLY: damage the nearest alive enemy. Wired to a key in main.js so
+   * health/death can be exercised without a combat system. Not used by any
+   * gameplay path.
+   * @param {number} [amount]
+   * @returns {boolean} whether an enemy was hit
+   */
+  devDamageNearestEnemy(amount = 10) {
+    if (!this.enemies) return false;
+    const target = this.enemies.getNearestAlive(this.player.getPosition());
+    if (!target) return false;
+    target.takeDamage(amount);
+    return true;
   }
 
   render() {
@@ -167,6 +210,10 @@ export class Game {
     this.debug.unmount();
     window.removeEventListener('resize', this._onResize);
 
+    if (this.enemies) {
+      this.enemies.dispose();
+      this.enemies = null;
+    }
     this.maps.unloadMap(); // disposes the live world
     this.player.dispose();
     this.assets.dispose(); // dispose the shared cache on full teardown only

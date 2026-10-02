@@ -17,9 +17,13 @@ game.start().catch((err) => {
 
 // Press "L" to toggle UI language at runtime (vi <-> en).
 // This proves the localization layer updates live; later it moves into a menu.
+// Press "K" (DEV) to damage the nearest enemy — exercises health/death until a
+// real combat system exists in a later step.
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyL') {
     game.toggleLanguage();
+  } else if (event.code === 'KeyK') {
+    game.devDamageNearestEnemy();
   }
 });
 

@@ -50,6 +50,9 @@ export class DebugOverlay {
       'camera',
       'assets',
       'colliders',
+      'enemies',
+      'aliveEnemies',
+      'enemyState',
       'language',
     ]) {
       const row = document.createElement('div');
@@ -90,6 +93,9 @@ export class DebugOverlay {
    * @param {{x:number,y:number,z:number}} [data.cameraPosition]
    * @param {number} [data.assetCount] cached asset count.
    * @param {number} [data.colliderCount] static collider count.
+   * @param {number} [data.enemyCount] total enemies.
+   * @param {number} [data.aliveEnemies] alive enemies.
+   * @param {string|null} [data.nearestEnemyState] nearest enemy AI state.
    */
   update({
     deltaTime,
@@ -101,6 +107,9 @@ export class DebugOverlay {
     cameraPosition,
     assetCount,
     colliderCount,
+    enemyCount,
+    aliveEnemies,
+    nearestEnemyState,
   }) {
     if (!this._el) return;
 
@@ -114,8 +123,23 @@ export class DebugOverlay {
     this._lastCamPos = cameraPosition;
     this._lastAssetCount = assetCount;
     this._lastColliderCount = colliderCount;
+    this._lastEnemyCount = enemyCount;
+    this._lastAliveEnemies = aliveEnemies;
+    this._lastNearestEnemyState = nearestEnemyState;
 
     this._renderValues();
+  }
+
+  /** Map an AI/movement state code to its localized label. */
+  _stateLabel(code) {
+    const map = {
+      idle: 'debug.stateIdle',
+      moving: 'debug.stateMoving',
+      patrol: 'debug.statePatrol',
+      chase: 'debug.stateChase',
+      dead: 'debug.stateDead',
+    };
+    return this._loc.t(map[code] || 'debug.stateIdle');
   }
 
   _updateFps(deltaTime) {
@@ -154,10 +178,9 @@ export class DebugOverlay {
       )} / ${fmt(pos.y)} / ${fmt(pos.z)}`;
     }
     if (this._rows.state) {
-      // Map the state code to a localized label (idle/moving).
-      const stateKey =
-        this._lastState === 'moving' ? 'debug.stateMoving' : 'debug.stateIdle';
-      this._rows.state.textContent = `${t('debug.state')}: ${t(stateKey)}`;
+      this._rows.state.textContent = `${t('debug.state')}: ${this._stateLabel(
+        this._lastState
+      )}`;
     }
     if (this._rows.speed) {
       const spd = typeof this._lastSpeed === 'number' ? this._lastSpeed : 0;
@@ -176,6 +199,20 @@ export class DebugOverlay {
     if (this._rows.colliders) {
       const n = this._lastColliderCount ?? 0;
       this._rows.colliders.textContent = `${t('debug.colliders')}: ${n}`;
+    }
+    if (this._rows.enemies) {
+      const n = this._lastEnemyCount ?? 0;
+      this._rows.enemies.textContent = `${t('debug.enemies')}: ${n}`;
+    }
+    if (this._rows.aliveEnemies) {
+      const n = this._lastAliveEnemies ?? 0;
+      this._rows.aliveEnemies.textContent = `${t('debug.aliveEnemies')}: ${n}`;
+    }
+    if (this._rows.enemyState) {
+      const label = this._lastNearestEnemyState
+        ? this._stateLabel(this._lastNearestEnemyState)
+        : '-';
+      this._rows.enemyState.textContent = `${t('debug.enemyState')}: ${label}`;
     }
     if (this._rows.language) {
       const lang = this._lastLang || this._loc.language;

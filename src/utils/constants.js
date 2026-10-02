@@ -82,6 +82,37 @@ export const MOVEMENT_STATES = Object.freeze({
   MOVING: 'moving',
 });
 
+/**
+ * Enemy defaults. A map's enemy definition may override any of these via its
+ * `behavior`/`stats` fields; see maps/TestWorld.js.
+ */
+export const ENEMY_CONFIG = Object.freeze({
+  maxHealth: 30,
+  // Patrol/idle wander speed vs. chase speed (units/second).
+  moveSpeed: 2.2,
+  chaseSpeed: 3.6,
+  // Footprint radius for static collision resolution.
+  radius: 0.5,
+  // How close the player must be to start chasing.
+  detectionRadius: 10,
+  // Must exceed detectionRadius to avoid state flicker at the edge.
+  loseTargetRadius: 16,
+  // How quickly the model turns to face its heading (per second).
+  rotationSpeed: 8,
+  // Distance from a patrol point at which it's considered reached.
+  waypointThreshold: 0.4,
+  // How close the enemy stops when chasing (so it doesn't jitter on the player).
+  chaseStopDistance: 1.2,
+});
+
+/** Enemy AI / lifecycle states. */
+export const ENEMY_STATES = Object.freeze({
+  IDLE: 'idle',
+  PATROL: 'patrol',
+  CHASE: 'chase',
+  DEAD: 'dead',
+});
+
 /** Logical input actions, decoupled from physical keys. */
 export const INPUT_ACTIONS = Object.freeze({
   FORWARD: 'forward',

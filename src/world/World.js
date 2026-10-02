@@ -74,6 +74,11 @@ export class World {
     return this.collision;
   }
 
+  /** @returns {object[]} enemy spawn definitions (data only; may be empty). */
+  getEnemyDefinitions() {
+    return this.definition.enemies ?? [];
+  }
+
   /**
    * Ground height at a world XZ position. Flat for now; the seam lets later
    * maps return terrain/heightmap/raycast values without changing callers.
