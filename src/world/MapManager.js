@@ -52,8 +52,8 @@ export class MapManager {
       throw new Error(`Unknown map id: "${id}"`);
     }
 
+    this.unloadMap(); // tear down the previous world first (resets status)
     this._status = 'loading';
-    this.unloadMap(); // tear down the previous world first
 
     try {
       const world = new World(def, this._assetLoader);
